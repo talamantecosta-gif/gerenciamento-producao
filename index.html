@@ -1,0 +1,156 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Fertirrigação · Gerenciamento Produção</title>
+  <meta name="description" content="Painel gerencial da produção de tratos culturais: fertirrigação localizada, cota do dia, fechamento de turno e variáveis operacionais.">
+  <link rel="icon" type="image/png" href="favicon.png">
+
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Archivo:wdth,wght@62..125,100..900&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.2/css/all.min.css">
+
+  <link rel="stylesheet" href="style.css?v=20261110b">
+  <link rel="stylesheet" href="tema.css?v=20261110b">
+  <link rel="stylesheet" href="layout.css?v=20261110b">
+  <link rel="stylesheet" href="fertirrigacao.css?v=20261110b">
+</head>
+<body class="auth-locked lay">
+
+  <!-- ================= TRILHO DE PÁGINAS ================= -->
+  <nav class="rail" aria-label="Páginas">
+    <div class="rail__logo"><img src="logo-icon.png" alt="Bioenergética Aroeira" onerror="this.remove()"></div>
+    <a href="#fert" data-p="fert" aria-label="Fertirrigação"><i class="fa-solid fa-droplet"></i><span class="tip">Fertirrigação Localizada</span></a>
+    <!-- próximas páginas: pulverização, adubação, herbicida… -->
+    <span class="rail__sp"></span>
+    <button id="btnSair" aria-label="Sair"><i class="fa-solid fa-right-from-bracket"></i><span class="tip">Sair</span></button>
+  </nav>
+
+  <div class="shell">
+    <!-- ================= TOPO ================= -->
+    <header class="top">
+      <div class="brand2"><b>Gerenciamento Produção</b><small>Centro de Operações Agrícolas · Bioenergética Aroeira</small></div>
+      <nav class="secs" id="secs" aria-label="Seções da página"></nav>
+      <div class="tools" role="toolbar" aria-label="Ações">
+        <span class="report-chip" id="ftChip" title="Última atualização"><i class="fa-regular fa-file-lines"></i><span>—</span></span>
+        <button class="ib pri so-editor" id="btnSync" aria-label="Sincronizar pasta"><i class="fa-solid fa-rotate"></i><span class="tip" id="syncTip">Sincronizar pasta</span></button>
+        <button class="ib opt so-editor" id="btnSyncCfg" aria-label="Configurar publicação"><i class="fa-brands fa-github"></i><span class="tip">Configurar GitHub</span></button>
+        <button class="ib" id="btnPrint" aria-label="Imprimir" onclick="print()"><i class="fa-solid fa-print"></i><span class="tip">Imprimir</span></button>
+      </div>
+    </header>
+
+    <main class="container" id="app">
+      <!-- =============================== FERTIRRIGAÇÃO =============================== -->
+      <div class="page" data-p="fert" data-titulo="Fertirrigação">
+        <div class="ph">
+          <div><small><span class="dot"></span><span id="ftPgData">Fertirrigação localizada</span></small><h1>Fertirrigação Localizada</h1></div>
+        </div>
+
+        <!-- RESUMO DO DIA -->
+        <section class="section section--first" id="resumo" data-nome="Resumo">
+          <div class="ft-k8" id="resKpis"></div>
+        </section>
+
+        <!-- FRENTES (aba PAINEL) -->
+        <section class="section" id="frentes" data-nome="Frentes">
+          <div class="section__head">
+            <h2><i class="fa-solid fa-tractor"></i>Frentes em operação</h2>
+            <div class="ft-dianav" id="navPainel"></div>
+          </div>
+          <div class="ft-frentes" id="ftFrentes"></div>
+        </section>
+
+        <!-- COTA DO DIA (aba DIMENSIONAMENTO DIÁRIO) -->
+        <section class="section" id="cota" data-nome="Cota do dia">
+          <div class="section__head">
+            <h2><i class="fa-solid fa-bullseye"></i>Cota do dia por frente</h2>
+            <div class="ft-dianav" id="navCota"></div>
+          </div>
+          <article class="card ft-cota-card"><div id="cotaFrentes"></div></article>
+        </section>
+
+        <!-- FECHAMENTO DE TURNO -->
+        <section class="section" id="fechamento" data-nome="Fechamento">
+          <div class="section__head"><h2><i class="fa-solid fa-clipboard-check"></i>Fechamento de turno</h2></div>
+          <div class="ft-fbar">
+            <div class="pv-dia" id="fechDiaNav"><button type="button" data-n="-1" aria-label="Dia anterior"><i class="fa-solid fa-chevron-left"></i></button><input type="date" id="fechDia" aria-label="Dia do fechamento"><button type="button" data-n="1" aria-label="Próximo dia"><i class="fa-solid fa-chevron-right"></i></button></div>
+            <div class="pv-seg" id="fechTurno" role="tablist" aria-label="Turno"><span class="ind"></span><button type="button" data-t="A">Turno A</button><button type="button" data-t="B">Turno B</button><button type="button" data-t="C">Turno C</button><button type="button" data-t="dia">Dia</button></div>
+            <span class="ft-sp"></span>
+            <button type="button" class="ft-btn" id="fechCopiar"><i class="fa-regular fa-copy"></i>Copiar imagem</button>
+            <button type="button" class="ft-btn pri" id="fechBaixar"><i class="fa-solid fa-download"></i>Baixar imagem</button>
+          </div>
+          <div class="ft-fech-wrap"><div class="ft-fech" id="fechCard"></div></div>
+        </section>
+
+        <!-- PRODUÇÃO (aba PRODUÇÃO TURNO) -->
+        <section class="section" id="producao" data-nome="Produção">
+          <div class="section__head"><h2><i class="fa-solid fa-chart-column"></i>Produção × cota</h2></div>
+          <section class="pv-fbar" aria-label="Filtros da produção" id="fbProd"></section>
+          <div class="ft-k5" id="prodKpis"></div>
+          <div class="ft-leitura" id="prodLeitura"></div>
+          <article class="card" style="margin-top:14px">
+            <header class="card__head">
+              <div><h3>Produção por dia</h3></div>
+              <div class="pv-seg ft-mini" id="evoModo"><span class="ind"></span><button type="button" data-m="ha" class="is-on">Hectares</button><button type="button" data-m="pc">% da cota</button></div>
+            </header>
+            <div class="ft-chart" id="chEvo"></div>
+          </article>
+          <div class="ft-g2">
+            <article class="card"><header class="card__head"><div><h3>Frente × turno</h3></div></header><div class="ft-chart" id="chTurno"></div></article>
+            <article class="card"><header class="card__head"><div><h3>Turnos sem produção · motivo</h3></div></header><div class="ft-rank" id="rkMotivo"></div></article>
+          </div>
+          <article class="card" style="margin-top:14px">
+            <header class="card__head"><div><h3>Atingimento da cota por dia</h3></div></header>
+            <div class="ft-heat" id="heat"></div>
+          </article>
+        </section>
+
+        <!-- VARIÁVEIS OPERACIONAIS (aba BASE DE DADOS) -->
+        <section class="section" id="variaveis" data-nome="Variáveis">
+          <div class="section__head"><h2><i class="fa-solid fa-satellite-dish"></i>Variáveis operacionais</h2></div>
+          <section class="pv-fbar" aria-label="Filtros das variáveis" id="fbSg"></section>
+          <div class="ft-k6 ft-kind" id="sgKpis" role="tablist" aria-label="Indicador"></div>
+          <div class="ft-g21">
+            <article class="card">
+              <header class="card__head"><div><h3 id="sgTit">Evolução</h3></div></header>
+              <div class="ft-chart" id="chSgEvo"></div>
+            </article>
+            <article class="card">
+              <header class="card__head"><div><h3 id="sgTurTit">Por turno</h3></div></header>
+              <div class="ft-chart" id="chSgTurno"></div>
+            </article>
+          </div>
+          <div class="ft-sm" id="sgFrentes"></div>
+          <div class="ft-g2">
+            <article class="card"><header class="card__head"><div><h3 id="sgOfTit">Ofensores</h3></div></header><div class="ft-rank" id="rkOf"></div></article>
+            <div class="ft-leitura" id="sgLeitura"></div>
+          </div>
+        </section>
+      </div>
+    </main>
+  </div>
+
+  <!-- ================= RODAPÉ ================= -->
+  <footer class="footer">
+    <div class="footer__inner">
+      <div class="footer__brand">
+        <span class="brand__logo brand__logo--lg"><img src="logo.png" alt="Bioenergética Aroeira" onerror="this.remove()"></span>
+        <div><strong>Gerenciamento Produção · Operação Agrícola</strong><small id="footerSource">Fonte: planilha Acompanhamento 2026</small></div>
+      </div>
+      <p class="copyright">© <span id="year">2026</span> Talamante. Todos os direitos reservados.</p>
+    </div>
+  </footer>
+  <div class="ft-toast" id="toast" role="status" aria-live="polite"></div>
+  <div class="ft-tip" id="tip"></div>
+  <div class="ft-modal" id="syncModal" hidden></div>
+
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+  <script src="acesso.js?v=20261110b"></script>
+  <script src="layout.js?v=20261110b"></script>
+  <script src="fertirrigacao-planilha.js?v=20261110b"></script>
+  <script src="fertirrigacao.js?v=20261110b"></script>
+  <script src="sincronizar.js?v=20261110b"></script>
+</body>
+</html>
