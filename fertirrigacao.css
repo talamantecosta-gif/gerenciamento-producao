@@ -417,3 +417,8 @@
   .ft-fbar .pv-seg { width: 100%; } .ft-fbar .pv-seg button { flex: 1; padding: 0 6px; }
   .ft-smc { padding: 12px; } .ft-smc .hd { flex-wrap: wrap; }
 }
+.ft-pastas { display: flex; flex-direction: column; gap: 8px; margin-top: 4px; }
+.ft-pasta { display: flex; align-items: center; gap: 10px; padding: 8px 10px; border: 1px solid var(--line); border-radius: 11px; }
+.ft-pasta > i { color: var(--palha); }
+.ft-pasta b { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--ink); }
+.ft-pasta .ft-btn { height: 32px; padding: 0 10px; }
