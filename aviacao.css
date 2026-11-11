@@ -1,0 +1,55 @@
+/* ===== Página Aviação (prefixo av-) ===== */
+#avFb { margin-bottom: 14px; }
+.av-sel { height: 40px; border: 1px solid var(--line); border-radius: 10px; background: #FAFBF9; padding: 0 12px; font: inherit; font-size: 13.5px; font-weight: 600; color: var(--ink); min-width: 230px; max-width: 100%; cursor: pointer; transition: border-color .2s, box-shadow .2s; }
+.av-sel:focus { outline: none; border-color: var(--folha); box-shadow: 0 0 0 3px rgba(60,122,53,.14); }
+.k__v.av-tv { font-variant-numeric: tabular-nums; }
+
+/* composição do ciclo */
+#avCiclo { padding: 4px 2px; }
+.av-ct { display: flex; align-items: baseline; gap: 10px; margin-bottom: 10px; }
+.av-ct span { font-size: 12px; text-transform: uppercase; letter-spacing: .05em; color: var(--muted); font-weight: 700; }
+.av-ct b { font-size: 30px; font-weight: 800; font-stretch: 85%; color: var(--ink); }
+.av-stk { display: flex; height: 42px; border-radius: 12px; overflow: hidden; background: #EEF1EC; gap: 2px; }
+.av-stk i { display: flex; align-items: center; justify-content: center; width: var(--w); color: #fff; font-style: normal; font-weight: 800; font-size: 13px; transform-origin: left; animation: ftCresceX 1s var(--ease-ft) both; animation-delay: calc(var(--i) * 140ms); cursor: default; transition: filter .2s; }
+.av-stk i:hover { filter: brightness(1.08); }
+.av-stk i span { animation: ftEntra .5s ease both; animation-delay: calc(var(--i) * 140ms + .6s); }
+.av-et { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; margin-top: 16px; }
+.av-e { display: flex; gap: 10px; align-items: center; padding: 10px 12px; border-radius: 14px; background: var(--campo); animation: ftEntra .55s var(--ease-ft) both; animation-delay: calc(var(--i) * 90ms + .2s); }
+.av-e__ic { width: 36px; height: 36px; border-radius: 11px; display: grid; place-items: center; color: #fff; flex: none; font-size: 14px; }
+.av-e div { display: flex; flex-direction: column; min-width: 0; }
+.av-e small { font-size: 11.5px; color: var(--muted); }
+.av-e b { font-size: 19px; font-weight: 800; font-stretch: 88%; color: var(--ink); line-height: 1.15; }
+.av-e em { font-style: normal; font-size: 11.5px; color: var(--muted); }
+
+/* faixas de índice */
+.av-fx { display: grid; grid-template-columns: 100px minmax(0, 1fr); gap: 12px; align-items: center; margin: 8px 0 12px; font-size: 13px; }
+.av-fx .pz-st100__b { height: 28px; border-radius: 9px; }
+.av-fx .pz-st100__b i { font-size: 11.5px; }
+.av-fxl { display: flex; flex-wrap: wrap; gap: 6px 16px; align-items: center; font-size: 12px; color: var(--muted); margin-top: 4px; }
+.av-fxl span { display: inline-flex; align-items: center; gap: 6px; }
+.av-fxl i { width: 10px; height: 10px; border-radius: 3px; display: inline-block; }
+.av-fxl small { margin-left: auto; }
+
+/* piores trabalhos */
+.av-pi { display: grid; grid-template-columns: minmax(0, 1fr) auto auto; gap: 8px; align-items: center; padding: 8px 10px; border-radius: 10px; transition: background .2s; animation: ftEntra .5s var(--ease-ft) both; }
+.av-pi:hover { background: var(--campo); }
+.av-pi div { display: flex; flex-direction: column; min-width: 0; }
+.av-pi b { font-size: 12.5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.av-pi small { font-size: 11.5px; color: var(--muted); }
+
+/* mini indicadores de voo */
+.av-minis { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 6px; }
+.av-mini { flex: 1 1 110px; padding: 8px 12px; border-radius: 12px; background: var(--campo); display: flex; flex-direction: column; animation: ftEntra .5s var(--ease-ft) both; }
+.av-mini span { font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spacing: .04em; font-weight: 700; }
+.av-mini b { font-size: 18px; font-weight: 800; font-stretch: 88%; color: var(--ink); }
+
+#avTab td:first-child { max-width: 230px; overflow: hidden; text-overflow: ellipsis; }
+
+@media (max-width: 1180px) { .av-et { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+@media (max-width: 760px) {
+  .av-sel { min-width: 0; width: 100%; }
+  .av-et { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 8px; }
+  .av-e { padding: 8px; } .av-e__ic { width: 30px; height: 30px; }
+  .av-fx { grid-template-columns: 80px minmax(0, 1fr); }
+  .av-ct b { font-size: 26px; }
+}

@@ -12,11 +12,12 @@
   <link href="https://fonts.googleapis.com/css2?family=Archivo:wdth,wght@62..125,100..900&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.2/css/all.min.css">
 
-  <link rel="stylesheet" href="style.css?v=20261111c">
-  <link rel="stylesheet" href="tema.css?v=20261111c">
-  <link rel="stylesheet" href="layout.css?v=20261111c">
-  <link rel="stylesheet" href="fertirrigacao.css?v=20261111c">
-  <link rel="stylesheet" href="pulverizacao.css?v=20261111c">
+  <link rel="stylesheet" href="style.css?v=20261111d">
+  <link rel="stylesheet" href="tema.css?v=20261111d">
+  <link rel="stylesheet" href="layout.css?v=20261111d">
+  <link rel="stylesheet" href="fertirrigacao.css?v=20261111d">
+  <link rel="stylesheet" href="pulverizacao.css?v=20261111d">
+  <link rel="stylesheet" href="aviacao.css?v=20261111d">
 </head>
 <body class="auth-locked lay">
 
@@ -25,6 +26,7 @@
     <div class="rail__logo"><img src="logo-icon.png" alt="Bioenergética Aroeira" onerror="this.remove()"></div>
     <a href="#fert" data-p="fert" aria-label="Fertirrigação"><i class="fa-solid fa-droplet"></i><span class="tip">Fertirrigação Localizada</span></a>
     <a href="#pulv" data-p="pulv" aria-label="Pulverização"><i class="fa-solid fa-spray-can-sparkles"></i><span class="tip">Pulverização</span></a>
+    <a href="#avi" data-p="avi" aria-label="Aviação"><i class="fa-solid fa-plane"></i><span class="tip">Aviação · aplicação aérea</span></a>
     <!-- próximas páginas: adubação, herbicida… -->
     <span class="rail__sp"></span>
     <button id="btnSair" aria-label="Sair"><i class="fa-solid fa-right-from-bracket"></i><span class="tip">Sair</span></button>
@@ -193,6 +195,60 @@
           <article class="card" style="margin-top:14px"><div class="pz-tab" id="pzOSTab"></div></article>
         </section>
       </div>
+      <!-- =============================== AVIAÇÃO (TRAVICAR) =============================== -->
+      <div class="page" data-p="avi" data-titulo="Aviação">
+        <div class="ph">
+          <div><small><span class="dot"></span><span id="avPgData">TRAVICAR</span></small><h1>Aviação · Aplicação Aérea</h1></div>
+        </div>
+
+        <section class="section section--first" id="avResumo" data-nome="Resumo">
+          <section class="pv-fbar" aria-label="Filtros da aviação" id="avFb"></section>
+          <div class="ft-k8" id="avKpis"></div>
+        </section>
+
+        <section class="section" id="avCicloS" data-nome="Ciclo">
+          <div class="section__head"><h2><i class="fa-solid fa-stopwatch"></i>Ciclo de aplicação</h2></div>
+          <article class="card"><div id="avCiclo"></div></article>
+          <div class="ft-g2">
+            <article class="card"><header class="card__head"><div><h3>Tempo médio de ciclo por dia</h3></div></header><div class="ft-chart" id="avChCiclo"></div></article>
+            <article class="card"><header class="card__head"><div><h3>Parte do ciclo aplicando</h3></div></header><div class="ft-chart" id="avChEf"></div></article>
+          </div>
+        </section>
+
+        <section class="section" id="avProd" data-nome="Produção">
+          <div class="section__head"><h2><i class="fa-solid fa-chart-column"></i>Hectares aplicados</h2></div>
+          <article class="card"><header class="card__head"><div><h3>Hectares por dia</h3></div></header><div class="ft-chart" id="avChHa"></div></article>
+          <div class="ft-g2">
+            <article class="card"><header class="card__head"><div><h3>Hectares por fazenda</h3></div></header><div class="ft-rank" id="avRkFaz"></div></article>
+            <div class="ft-leitura" id="avLeit"></div>
+          </div>
+        </section>
+
+        <section class="section" id="avQual" data-nome="Qualidade">
+          <div class="section__head"><h2><i class="fa-solid fa-crosshairs"></i>Qualidade da aplicação</h2></div>
+          <div class="ft-g2">
+            <article class="card"><header class="card__head"><div><h3>Índice de acerto</h3></div></header><div class="ft-chart" id="avChAc"></div></article>
+            <article class="card"><header class="card__head"><div><h3>Índice de uniformidade</h3></div></header><div class="ft-chart" id="avChUn"></div></article>
+          </div>
+          <div class="ft-g2">
+            <article class="card"><header class="card__head"><div><h3>Área por faixa de índice</h3></div></header><div id="avFaixas"></div></article>
+            <article class="card"><header class="card__head"><div><h3>Trabalhos com menor índice</h3></div></header><div id="avPiores"></div></article>
+          </div>
+        </section>
+
+        <section class="section" id="avVoo" data-nome="Voo">
+          <div class="section__head"><h2><i class="fa-solid fa-plane-up"></i>Altura e velocidade</h2></div>
+          <div class="ft-g2">
+            <article class="card"><header class="card__head"><div><h3>Altura realizada × alvo</h3></div></header><div class="av-minis" id="avAltK"></div><div class="ft-chart" id="avChAlt"></div></article>
+            <article class="card"><header class="card__head"><div><h3>Velocidade média</h3></div></header><div class="av-minis" id="avVelK"></div><div class="ft-chart" id="avChVel"></div></article>
+          </div>
+        </section>
+
+        <section class="section" id="avTrab" data-nome="Trabalhos">
+          <div class="section__head"><h2><i class="fa-solid fa-list-check"></i>Trabalhos</h2><span class="pz-sub" id="avTabN"></span></div>
+          <article class="card"><div class="pz-tab" id="avTab"></div></article>
+        </section>
+      </div>
     </main>
   </div>
 
@@ -201,7 +257,7 @@
     <div class="footer__inner">
       <div class="footer__brand">
         <span class="brand__logo brand__logo--lg"><img src="logo.png" alt="Bioenergética Aroeira" onerror="this.remove()"></span>
-        <div><strong>Gerenciamento Produção · Operação Agrícola</strong><small id="footerSource">Fonte: planilhas Acompanhamento 2026 e Pulverizadores</small></div>
+        <div><strong>Gerenciamento Produção · Operação Agrícola</strong><small id="footerSource">Fonte: planilhas Acompanhamento 2026, Pulverizadores e relatório TRAVICAR</small></div>
       </div>
       <p class="copyright">© <span id="year">2026</span> Talamante. Todos os direitos reservados.</p>
     </div>
@@ -211,12 +267,14 @@
   <div class="ft-modal" id="syncModal" hidden></div>
 
   <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
-  <script src="acesso.js?v=20261111c"></script>
-  <script src="layout.js?v=20261111c"></script>
-  <script src="fertirrigacao-planilha.js?v=20261111c"></script>
-  <script src="pulverizacao-planilha.js?v=20261111c"></script>
-  <script src="fertirrigacao.js?v=20261111c"></script>
-  <script src="pulverizacao.js?v=20261111c"></script>
-  <script src="sincronizar.js?v=20261111c"></script>
+  <script src="acesso.js?v=20261111d"></script>
+  <script src="layout.js?v=20261111d"></script>
+  <script src="fertirrigacao-planilha.js?v=20261111d"></script>
+  <script src="pulverizacao-planilha.js?v=20261111d"></script>
+  <script src="fertirrigacao.js?v=20261111d"></script>
+  <script src="pulverizacao.js?v=20261111d"></script>
+  <script src="aviacao-planilha.js?v=20261111d"></script>
+  <script src="aviacao.js?v=20261111d"></script>
+  <script src="sincronizar.js?v=20261111d"></script>
 </body>
 </html>

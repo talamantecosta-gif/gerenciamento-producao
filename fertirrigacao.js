@@ -583,6 +583,7 @@ window.Fertirrigacao = (function () {
     if (sair) sair.title = `Sair (${user})`;
     Fertirrigacao.iniciar(window.__FERT_DADOS__);
     if (window.Pulverizacao) Pulverizacao.iniciar(window.__PULV_DADOS__);
+    if (window.Aviacao) Aviacao.iniciar(window.__AVI_DADOS__);
   });
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', go); else go();
 })();

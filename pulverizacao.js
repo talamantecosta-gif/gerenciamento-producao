@@ -286,6 +286,7 @@ window.Pulverizacao = (function () {
     ligar();
     pResumo(); pFrota(); pRegNav(); pCaminhoes(); pCard(); pProd(); pQual(); pOS();
     montado = true;
+    if (window.Aviacao && Aviacao.dados) Aviacao.aoEntrar(); // nomes das fazendas da aviação vêm do cadastro da pulverização
   }
   // gancho de troca de página: gráficos desenhados com a página oculta ficam estreitos → redesenha ao entrar
   if (window.Layout) {

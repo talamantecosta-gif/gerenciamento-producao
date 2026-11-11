@@ -7,6 +7,8 @@
          → fertirrigacao.json (com o histórico da cota, PAINEL e fechamentos);
        - "Pulverizadores.xlsx" (nome com Pulveriza) → pulverizacao.json
          (correções da planilha refeitas a cada sincronização);
+       - "relatorio-ciclo-operacao.xlsx" (TRAVICAR, aplicação aérea) → aviacao.json
+         (trabalhos acumulados: o histórico fica mesmo que saia do período exportado);
        - "Usuários site gerencial.xlsx" (nome com Usuário) → acesso.json
          (mesma regra do painel-agricola: inativo sai, senha < 8 mantém como
          estava, o usuário logado nunca é removido).
@@ -24,6 +26,7 @@ window.Sincronizar = (function () {
   const TIPOS = [
     { tipo: 'fert', rx: /(acompanhamento|fertirriga).*\.xls[xm]$/i, nome: 'Fertirrigação' },
     { tipo: 'pulv', rx: /pulveriza.*\.xls[xm]$/i, nome: 'Pulverização' },
+    { tipo: 'avi', rx: /(ciclo.*opera|travicar).*\.xls[xm]?$/i, nome: 'Aviação (TRAVICAR)' },
     { tipo: 'usuarios', rx: /usu[aá]rio.*\.xls[xm]$/i, nome: 'Usuários' },
   ];
 
@@ -141,7 +144,7 @@ window.Sincronizar = (function () {
   async function pastas() {
     if (!SUPORTA) { modal(`<h3>Pastas</h3><p>Para ler pastas do computador, abra o painel no <b>Google Chrome</b> ou no <b>Microsoft Edge</b> (no computador).</p><div class="ft-modal__acts"><button class="ft-btn" data-fechar>Fechar</button></div>`); return; }
     const l = await lerPastas(), perms = await Promise.all(l.map(temPerm));
-    const m = modal(`<h3><i class="fa-regular fa-folder-open"></i> Pastas sincronizadas</h3><p>O painel procura nestas pastas (e numa subpasta abaixo) as planilhas <b>Acompanhamento 2026</b>, <b>Pulverizadores</b> e <b>Usuários site gerencial</b>. Se o mesmo arquivo estiver em duas pastas, vale o salvo por último.</p>
+    const m = modal(`<h3><i class="fa-regular fa-folder-open"></i> Pastas sincronizadas</h3><p>O painel procura nestas pastas (e numa subpasta abaixo) as planilhas <b>Acompanhamento 2026</b>, <b>Pulverizadores</b>, o relatório da <b>TRAVICAR</b> (relatorio-ciclo-operacao) e <b>Usuários site gerencial</b>. Se o mesmo arquivo estiver em duas pastas, vale o salvo por último.</p>
       <div class="ft-pastas">${l.length ? l.map((h, i) => `<div class="ft-pasta"><i class="fa-solid fa-folder"></i><b>${esc(h.name)}</b>${perms[i] ? '<span class="ft-tag ok">liberada</span>' : `<button class="ft-btn" data-lib="${i}">Liberar</button>`}<button class="ft-btn" data-rem="${i}" aria-label="Remover ${esc(h.name)}"><i class="fa-solid fa-trash"></i></button></div>`).join('') : '<div class="ft-vazio">Nenhuma pasta vinculada.</div>'}</div>
       <div class="ft-modal__acts"><button class="ft-btn" data-fechar>Fechar</button><button class="ft-btn" id="pAdd"><i class="fa-solid fa-folder-plus"></i>Adicionar pasta</button><button class="ft-btn pri" id="pSync"><i class="fa-solid fa-rotate"></i>Sincronizar</button></div>`);
     m.querySelector('#pAdd').onclick = async () => { try { await adicionarPasta(); } catch (e) { /* cancelou */ } pastas(); };
@@ -200,7 +203,7 @@ window.Sincronizar = (function () {
         if (f) { const t = TIPOS.find(t => t.rx.test(f.name)); achados[t && t.tipo !== 'usuarios' ? t.tipo : 'fert'] = { f, pasta: '—' }; }
       }
       TIPOS.forEach(t => { const a = achados[t.tipo]; log(a ? `${t.nome}: <b>${esc(a.f.name)}</b> (${esc(a.pasta)}) · salva em ${new Date(a.f.lastModified).toLocaleString('pt-BR')}` : `${t.nome}: planilha não encontrada nas pastas.`, a ? '' : 'bad'); });
-      if (!achados.fert && !achados.pulv && !achados.usuarios) throw new Error('nenhuma planilha encontrada. Confira as pastas no botão Pastas.');
+      if (!achados.fert && !achados.pulv && !achados.avi && !achados.usuarios) throw new Error('nenhuma planilha encontrada. Confira as pastas no botão Pastas.');
 
       const c = await cfg.get(), S0 = sigs.get(), S1 = { ...S0 }, arquivos = [];
       // fertirrigação
@@ -235,6 +238,23 @@ window.Sincronizar = (function () {
           log(`Pulverização: status de ${String(final.status.data || '').split('-').reverse().join('/')} · ${final.producao.length} apontamentos de produção · ${final.os.length} OS.`, 'ok');
         }
       }
+      // aviação (TRAVICAR)
+      if (achados.avi && window.AviPlanilha) {
+        const AA = 'aviacao.json', f = achados.avi.f, sig = `${f.name}|${f.lastModified}|${AviPlanilha.VERSAO}|${window.Aviacao ? Aviacao.VERSAO : 0}`;
+        let anterior = null;
+        if (c && c.token) { try { const b = await lerRepoBruto(c, AA); anterior = b ? (await Acesso.readJson(b)).data : null; } catch (e) { if (/token/.test(e.message)) throw e; } }
+        if (!anterior) anterior = (window.Aviacao && Aviacao.dados) || await (async () => { const b = await lerSite(AA); return b ? (await Acesso.readJson(b)).data : null; })();
+        if (anterior && anterior.fonteSig === sig) log('Aviação: sem mudança desde a última publicação.');
+        else {
+          log('Lendo o relatório da TRAVICAR…');
+          const X = await carregaXlsx();
+          const novo = AviPlanilha.ler(X, await f.arrayBuffer());
+          const final = AviPlanilha.mesclar(anterior, novo); final.fonte = f.name; final.fonteSig = sig;
+          arquivos.push({ path: AA, content: JSON.stringify(await Acesso.encryptJson(final)), avi: final });
+          const cr = novo.correcoes || {};
+          log(`Aviação: ${novo.trabalhos.length} trabalhos no relatório · ${final.trabalhos.length} no histórico${cr.repetidos ? ` · ${cr.repetidos} repetido(s) unificado(s)` : ''}.`, 'ok');
+        }
+      }
       // usuários
       if (achados.usuarios) {
         const f = achados.usuarios.f, sig = `${f.name}|${f.lastModified}`;
@@ -261,7 +281,8 @@ window.Sincronizar = (function () {
       }
       const fert = arquivos.find(a => a.dados); if (fert) Fertirrigacao.definir(fert.dados);
       const pz = arquivos.find(a => a.pulv); if (pz && window.Pulverizacao) Pulverizacao.definir(pz.pulv);
-      if ((fert || pz) && window.Layout && Layout.animar) Layout.animar(document);
+      const av = arquivos.find(a => a.avi); if (av && window.Aviacao) Aviacao.definir(av.avi);
+      if ((fert || pz || av) && window.Layout && Layout.animar) Layout.animar(document);
     } catch (e) {
       if (e && e.name === 'AbortError') log('Sincronização cancelada.');
       else log('Não foi possível sincronizar: ' + esc(e.message || e), 'bad');
