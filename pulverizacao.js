@@ -56,25 +56,17 @@ window.Pulverizacao = (function () {
   const metaDia = (d, eqs) => { const todos = new Set(D.producao.filter(p => p.d === d).map(p => p.eq)); if (!todos.size) return 0; if (!eqs) return D.parametros.metaHaDia; const n = [...todos].filter(e => eqs.includes(e)).length; return n ? D.parametros.metaHaDia * n / todos.size : 0; };
   function pResumo() {
     const { nf, pc, dBR, dBRa, sum, kpi, cascata, animar, addD } = U;
-    const fr = D.status.frota || [], tot = fr.length, rod = fr.filter(x => x.status === 'Rodando').length, par = fr.filter(x => /Parado|Falta/.test(x.status)), man = fr.filter(x => x.status === 'Manutenção');
-    const motP = {}; par.forEach(x => { const m = x.motivo || 'sem motivo'; motP[m] = (motP[m] || 0) + 1; });
-    const topP = Object.entries(motP).sort((a, b) => b[1] - a[1])[0];
     const dias = [...new Set(D.producao.map(p => p.d))].sort(), hoje = D.status.data || dias[dias.length - 1];
     const d1 = dias.filter(d => d < hoje).pop() || dias[dias.length - 1];
     const r1 = sum(D.producao.filter(p => p.d === d1).map(p => p.ha)), m1 = metaDia(d1), q1 = m1 ? r1 / m1 : null;
     const mes = (d1 || '').slice(0, 7), pm = D.producao.filter(p => p.d.startsWith(mes)), rm = sum(pm.map(p => p.ha)), dm = new Set(pm.map(p => p.d)).size;
-    const abertas = D.os.filter(o => o.status !== 'Concluída'), falt = sum(abertas.map(o => Math.max(0, o.area - o.real)));
     const fimQ = D.qualidade.map(q => q.d).sort().pop(), q30 = D.qualidade.filter(q => q.d > addD(fimQ, -30) && q.cond), ci = q30.filter(q => q.cond === 'CI').length, sd = q30.filter(q => q.cond === 'SD').length;
     const st = p => p == null ? '' : p >= 1 ? 'ok' : p >= .9 ? 'warn' : 'bad';
     const el = $('#pzKpis');
     el.innerHTML = [
-      kpi({ t: 'Equipamentos rodando', ic: 'fa-play', v: rod, un: `de ${tot}`, sub: `<b>${pc(tot ? rod / tot : null)}</b> em operação`, st: tot ? (rod / tot >= .7 ? 'ok' : rod / tot >= .4 ? 'warn' : 'bad') : '', bar: tot ? rod / tot : null }),
-      kpi({ t: 'Parados', ic: 'fa-circle-pause', v: par.length, sub: topP ? `mais comum: <b>${U.esc(topP[0].toLowerCase())}</b>` : 'nenhum parado', st: par.length ? 'warn' : 'ok' }),
-      kpi({ t: 'Em manutenção', ic: 'fa-screwdriver-wrench', v: man.length, sub: man.length ? U.esc(man.slice(0, 4).map(x => x.frota).join(', ')) + (man.length > 4 ? '…' : '') : 'nenhum', st: man.length ? 'bad' : 'ok' }),
       kpi({ t: `Produção · ${dBR(d1)}`, ic: 'fa-spray-can-sparkles', v: r1, dec: 1, un: 'ha', sub: `meta ${nf(m1)} ha/dia da frente` }),
       kpi({ t: `Atingimento · ${dBR(d1)}`, ic: 'fa-bullseye', v: q1 == null ? null : q1 * 100, dec: 1, un: '%', sub: q1 == null ? '' : `diferença de <b>${U.nfs(r1 - m1, 1)} ha</b>`, st: st(q1), bar: q1, mk: q1 ? Math.min(1, 1 / Math.max(1, q1)) : null }),
       kpi({ t: 'Produção no mês', ic: 'fa-calendar-check', v: rm, dec: 1, un: 'ha', sub: dm ? `${dm} dia(s) · média ${nf(rm / dm, 1)} ha/dia` : '' }),
-      kpi({ t: 'OS em aberto', ic: 'fa-clipboard-list', v: abertas.length, sub: `<b>${nf(falt, 1)} ha</b> faltando aplicar`, attrs: 'data-ir="pzOS" style="cursor:pointer"' }),
       kpi({ t: 'Condição ideal · 30 dias', ic: 'fa-cloud-sun', v: q30.length ? ci / q30.length * 100 : null, dec: 0, un: '%', sub: q30.length ? `${pc(sd / q30.length)} das aplicações muito desfavoráveis` : '', st: q30.length ? (ci / q30.length >= .8 ? 'ok' : ci / q30.length >= .6 ? 'warn' : 'bad') : '', bar: q30.length ? ci / q30.length : null, attrs: 'data-ir="pzQualidade" style="cursor:pointer"' }),
     ].join('');
     cascata(el); animar(el);
@@ -183,9 +175,10 @@ window.Pulverizacao = (function () {
         const L = por(h), x = pl + i * bw + 2, bwi = Math.max(2, bw - 4);
         if (L.length) {
           let acc = 0;
-          ['SD', 'PE', 'CI'].forEach(k => { const f = L.filter(q => q.cond === k).length / L.length; if (!f) return; s += `<rect class="ftb" style="--i:${i}" x="${x}" y="${y(acc + f)}" width="${bwi}" height="${y(acc) - y(acc + f)}" fill="${CCOR[k]}" opacity="${.35 + .65 * L.length / mx}" data-tip="${esc(`<b>${String(h).padStart(2, '0')}h</b> · ${L.length} aplicações<br>${CNOME.CI}: ${pc(L.filter(q => q.cond === 'CI').length / L.length)}<br>${CNOME.PE}: ${pc(L.filter(q => q.cond === 'PE').length / L.length)}<br>${CNOME.SD}: ${pc(L.filter(q => q.cond === 'SD').length / L.length)}`)}"/>`; acc += f; });
-          const ci = L.filter(q => q.cond === 'CI').length / L.length;
-          if (bwi >= 18) s += `<text class="lb fade" x="${x + bwi / 2}" y="${pt - 6}" text-anchor="middle" style="font-size:10px">${Math.round(ci * 100)}</text>`;
+          const haH = sum(L.map(q => q.aplicada || 0)), fx = (k, d, un) => { const v = avg(L.map(q => q[k]).filter(v => v != null)); return v == null ? '—' : nf(v, d) + un; };
+          const tipH = esc(`<b>${String(h).padStart(2, '0')}h</b> · ${L.length} aplicaç${L.length > 1 ? 'ões' : 'ão'}<br>Área aplicada: <b>${nf(haH, 1)} ha</b><br>Temperatura: <b>${fx('t', 1, ' °C')}</b><br>Vento: <b>${fx('vento', 1, ' km/h')}</b><br>Umidade: <b>${fx('ur', 0, '%')}</b>`);
+          ['SD', 'PE', 'CI'].forEach(k => { const f = L.filter(q => q.cond === k).length / L.length; if (!f) return; s += `<rect class="ftb" style="--i:${i}" x="${x}" y="${y(acc + f)}" width="${bwi}" height="${y(acc) - y(acc + f)}" fill="${CCOR[k]}" opacity="${.35 + .65 * L.length / mx}" data-tip="${tipH}"/>`; acc += f; });
+          if (bwi >= 18) s += `<text class="lb fade" x="${x + bwi / 2}" y="${pt - 6}" text-anchor="middle" style="font-size:10px">${nf(haH, haH < 10 ? 1 : 0)}</text>`;
         }
         if (i % 2 === 0) s += `<text x="${x + bwi / 2}" y="${H - 8}" text-anchor="middle">${String(h).padStart(2, '0')}h</text>`;
       });
