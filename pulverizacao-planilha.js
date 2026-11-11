@@ -16,7 +16,7 @@
    ========================================================================= */
 (function (root) {
   'use strict';
-  const VERSAO = 1;
+  const VERSAO = 2;
   const META_HA_DIA = 150;          // meta da frente de pulverização (total do dia)
   const TOL_AREA = .10;             // OS: realizado acima de 110% da área → verificar
   const IDADE_MAX = 7;              // OS em aberto há mais de 7 dias → alerta
@@ -193,9 +193,25 @@
     return mesclar(null, novo);
   }
   /** Mantém o histórico do status da frota e do nível dos caminhões (a planilha guarda só o momento atual). */
+  /** Histórico: cada sincronização grava um registro por dia + turno do status (frota, início das frentes e nível dos
+   *  caminhões daquele momento). Sincronizar de novo no mesmo turno atualiza o registro; turnos novos se acumulam. */
   function mesclar(anterior, novo) {
-    const h = anterior && anterior.historico ? JSON.parse(JSON.stringify(anterior.historico)) : { status: {}, nivel: {} };
-    if (novo.status && novo.status.data) h.status[novo.status.data] = { turno: novo.status.turno, frota: novo.status.frota };
+    const h = anterior && anterior.historico ? JSON.parse(JSON.stringify(anterior.historico)) : {};
+    h.status = h.status || {}; h.nivel = h.nivel || {}; h.registros = h.registros || {};
+    // registros antigos (antes do histórico por turno) viram registros também
+    Object.entries(h.status).forEach(([d, st]) => {
+      const k = d + '|' + (st.turno || '-'); if (h.registros[k]) return;
+      const nk = Object.keys(h.nivel).filter(x => x.startsWith(d + '|')).sort().pop();
+      h.registros[k] = { data: d, turno: st.turno || null, informadoPor: null, inicio: {}, frota: st.frota || [], nivel: nk ? { data: d, turno: nk.split('|')[1], caminhoes: h.nivel[nk] } : null };
+    });
+    if (novo.status && novo.status.data) {
+      h.status[novo.status.data] = { turno: novo.status.turno, frota: novo.status.frota };
+      h.registros[novo.status.data + '|' + (novo.status.turno || '-')] = {
+        data: novo.status.data, turno: novo.status.turno || null, informadoPor: novo.status.informadoPor || null,
+        inicio: novo.status.inicio || {}, frota: novo.status.frota || [],
+        nivel: novo.nivel && novo.nivel.caminhoes && novo.nivel.caminhoes.length ? { data: novo.nivel.data, turno: novo.nivel.turno, caminhoes: novo.nivel.caminhoes } : null,
+      };
+    }
     if (novo.nivel && novo.nivel.data) h.nivel[novo.nivel.data + '|' + (novo.nivel.turno || '-')] = novo.nivel.caminhoes;
     return { ...novo, historico: h };
   }

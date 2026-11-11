@@ -73,3 +73,11 @@
   .pz-tq__svg { width: 56px; height: 70px; }
 }
 @media print { .pz-tab { max-height: none; overflow: visible; } }
+
+/* histórico (dia + turno) do nível e da imagem */
+.pz-reg { display: inline-flex; align-items: center; }
+.pz-reg select { border: 0; background: none; height: 36px; font: inherit; font-size: 13.5px; font-weight: 600; color: var(--ink); padding: 0 4px; cursor: pointer; font-variant-numeric: tabular-nums; }
+.pz-reg select:focus { outline: none; }
+.pz-reg button:disabled { opacity: .3; cursor: default; }
+.section__head .pz-reg { margin-left: 12px; }
+@media (max-width: 760px) { .section__head .pz-sub { display: none; } .section__head .pz-reg { margin-left: auto; } }

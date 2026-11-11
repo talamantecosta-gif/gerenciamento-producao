@@ -48,8 +48,8 @@ window.Pulverizacao = (function () {
   }
 
   /* =================== RESUMO =================== */
-  function frentesStatus() {
-    const g = {}; (D.status.frota || []).forEach(x => (g[x.frente] = g[x.frente] || []).push(x));
+  function frentesStatus(frota) {
+    const g = {}; (frota || D.status.frota || []).forEach(x => (g[x.frente] = g[x.frente] || []).push(x));
     return Object.keys(g).sort((a, b) => { const ia = ORDEM_FRENTES.indexOf(a), ib = ORDEM_FRENTES.indexOf(b); return (ia < 0 ? 99 : ia) - (ib < 0 ? 99 : ib) || a.localeCompare(b, 'pt-BR'); }).map(f => ({ frente: f, itens: g[f] }));
   }
   // meta da frente: 150 ha/dia no total; filtrando um pulverizador, a meta é dividida entre os que apontaram no dia
@@ -86,11 +86,31 @@ window.Pulverizacao = (function () {
     cascata(el);
   }
 
+  /* =================== HISTÓRICO (registro por dia + turno) =================== */
+  function regs() {
+    const H = (D.historico && D.historico.registros) || {}, L = { ...H };
+    const k = D.status.data + '|' + (D.status.turno || '-');
+    if (!L[k]) L[k] = { data: D.status.data, turno: D.status.turno, informadoPor: D.status.informadoPor, inicio: D.status.inicio || {}, frota: D.status.frota || [], nivel: D.nivel };
+    return Object.keys(L).sort().map(k => ({ k, ...L[k] }));
+  }
+  const regAtual = () => { const L = regs(); return L.find(r => r.k === S.reg) || L[L.length - 1]; };
+  function pRegNav() {
+    const L = regs(), R = regAtual(), i = L.findIndex(r => r.k === R.k);
+    $$('.pz-reg').forEach(n => {
+      const sel = n.querySelector('select');
+      sel.innerHTML = L.slice().reverse().map(r => `<option value="${U.esc(r.k)}">${U.dBRa(r.data)}${r.turno ? ' · ' + U.esc(r.turno) : ''}</option>`).join('');
+      sel.value = R.k;
+      n.querySelector('[data-n="-1"]').disabled = i <= 0;
+      n.querySelector('[data-n="1"]').disabled = i >= L.length - 1;
+    });
+  }
+  function irReg(k) { S.reg = k; pRegNav(); pCaminhoes(); pCard(); }
+
   /* =================== CAMINHÕES (nível dos tanques) =================== */
   function pCaminhoes() {
-    const { nf, pc, esc, dBRa } = U;
-    const N = D.nivel, el = $('#pzTanques');
-    $('#pzNivData').textContent = N ? `${dBRa(N.data)}${N.turno ? ' · turno ' + N.turno : ''}` : '';
+    const { nf, pc, esc } = U;
+    const R = regAtual(), N = R.nivel, el = $('#pzTanques');
+    $('#pzNivData').textContent = N ? `leitura do turno ${N.turno || '—'}${R.informadoPor ? ' · informado por ' + R.informadoPor : ''}` : '';
     if (!N || !N.caminhoes.length) { el.innerHTML = '<div class="ft-vazio">Sem leitura dos caminhões.</div>'; return; }
     el.innerHTML = N.caminhoes.map((c, i) => {
       const p = c.p || 0, cor = { ok: '#2a78d6', warn: '#E0A100', bad: '#C62828' }[c.status] || '#9AA59D';
@@ -109,11 +129,11 @@ window.Pulverizacao = (function () {
   /* =================== IMAGEM PARA O GRUPO =================== */
   function pCard() {
     const { esc, pc, nf, dBRa, semana } = U;
-    const N = D.nivel, card = $('#pzCard');
-    card.innerHTML = `<div class="fc-head"><div class="fc-logo"><img src="logo.png" alt="Bioenergética Aroeira"></div><div class="fc-tt"><h3>Status · Pulverização</h3><p>Defensivos agrícolas · COA Bioenergética Aroeira</p></div><div class="fc-data"><b>${dBRa(D.status.data)}</b><span>${semana(D.status.data)}${D.status.turno ? ' · ' + esc(D.status.turno) : ''}</span></div></div>
-      ${frentesStatus().map(g => `<div class="fc-sec"><h4>${esc(g.frente)}${(D.status.inicio || {})[g.frente] ? ' · início ' + D.status.inicio[g.frente] : ''}</h4><div class="pz-cl">${g.itens.map(x => `<div class="pz-ci ${ST_COR[x.status] || 'nd'}"><span class="pz-dot"></span><b>${esc(x.frota)}</b><span>${esc(x.status)}${x.motivo ? ' · ' + esc(x.motivo.toLowerCase()) : ''}</span></div>`).join('')}</div></div>`).join('')}
+    const R = regAtual(), N = R.nivel, card = $('#pzCard'), ini = R.inicio || {};
+    card.innerHTML = `<div class="fc-head"><div class="fc-logo"><img src="logo.png" alt="Bioenergética Aroeira"></div><div class="fc-tt"><h3>Status · Pulverização</h3><p>Defensivos agrícolas · COA Bioenergética Aroeira</p></div><div class="fc-data"><b>${dBRa(R.data)}</b><span>${semana(R.data)}${R.turno ? ' · ' + esc(R.turno) : ''}</span></div></div>
+      ${frentesStatus(R.frota).map(g => `<div class="fc-sec"><h4>${esc(g.frente)}${ini[g.frente] ? ' · início ' + ini[g.frente] : ''}</h4><div class="pz-cl">${g.itens.map(x => `<div class="pz-ci ${ST_COR[x.status] || 'nd'}"><span class="pz-dot"></span><b>${esc(x.frota)}</b><span>${esc(x.status)}${x.motivo ? ' · ' + esc(x.motivo.toLowerCase()) : ''}</span></div>`).join('')}</div></div>`).join('')}
       ${N && N.caminhoes.length ? `<div class="fc-sec"><h4>Nível dos caminhões${N.turno ? ' · turno ' + esc(N.turno) : ''}</h4>${N.caminhoes.map(c => `<div class="pz-cn"><b>${esc(c.caminhao)}</b><div class="fc-trk"><i style="--w:${(c.p || 0) * 100}%;background:${{ ok: '#2a78d6', warn: '#E0A100', bad: '#C62828' }[c.status] || '#9AA59D'}"></i></div><span>${pc(c.p)} · ${nf(c.litros)} L ${esc(c.conteudo || '')}</span></div>`).join('')}</div>` : ''}
-      <div class="fc-foot"><span>Gerenciamento Produção · ${new Date().toLocaleString('pt-BR', { dateStyle: 'short', timeStyle: 'short' })}${D.status.informadoPor ? ' · informado por ' + esc(D.status.informadoPor) : ''}</span><span>© Talamante</span></div>`;
+      <div class="fc-foot"><span>Gerenciamento Produção · ${new Date().toLocaleString('pt-BR', { dateStyle: 'short', timeStyle: 'short' })}${R.informadoPor ? ' · informado por ' + esc(R.informadoPor) : ''}</span><span>© Talamante</span></div>`;
   }
   async function imagem() {
     if (!window.html2canvas) { U.toast('Gerador de imagem indisponível — verifique a internet.'); return null; }
@@ -244,8 +264,12 @@ window.Pulverizacao = (function () {
   function ligar() {
     if (ligado) return; ligado = true;
     $('#pzOSFiltro').onclick = e => { const b = e.target.closest('button'); if (b) { S.osTodas = b.dataset.v === 'todas'; pOS(); } };
-    $('#pzBaixar').onclick = async () => { const c = await imagem(); if (!c) return; const a = document.createElement('a'); a.href = c.toDataURL('image/png'); a.download = `status-pulverizacao-${D.status.data}.png`; a.click(); U.toast('Imagem baixada.'); };
+    $('#pzBaixar').onclick = async () => { const c = await imagem(); if (!c) return; const a = document.createElement('a'); a.href = c.toDataURL('image/png'); const R = regAtual(); a.download = `status-pulverizacao-${R.data}${R.turno ? '-' + R.turno.replace(/\W+/g, '') : ''}.png`; a.click(); U.toast('Imagem baixada.'); };
     $('#pzCopiar').onclick = async () => { try { const c = await imagem(); if (!c) return; const blob = await new Promise(r => c.toBlob(r, 'image/png')); await navigator.clipboard.write([new ClipboardItem({ 'image/png': blob })]); U.toast('Imagem copiada — é só colar no grupo.'); } catch (e) { U.toast('Não foi possível copiar. Use “Baixar imagem”.'); } };
+    $$('.pz-reg').forEach(n => {
+      n.querySelector('select').onchange = e => irReg(e.target.value);
+      n.onclick = e => { const b = e.target.closest('button[data-n]'); if (!b) return; const L = regs(), k = regAtual().k, i = L.findIndex(r => r.k === k) + +b.dataset.n; if (L[i]) irReg(L[i].k); };
+    });
     let tm; addEventListener('resize', () => { clearTimeout(tm); tm = setTimeout(() => { if (D && visivel()) { pProd(); pQual(); } }, 220); });
   }
   const visivel = () => { const pg = $('.page[data-p="pulv"]'); return pg && pg.classList.contains('is-on'); };
@@ -260,7 +284,7 @@ window.Pulverizacao = (function () {
     S.fbP = filtro($('#pzFbProd'), S.p, { turnos: tP, frotas: eqP, min: dP[0], max: dP[dP.length - 1], padrao: padP, cb: pProd });
     S.fbQ = filtro($('#pzFbQual'), S.q, { turnos: tQ, frotas: eqQ, min: dQ[0], max: dQ[dQ.length - 1], padrao: padQ, cb: pQual });
     ligar();
-    pResumo(); pFrota(); pCaminhoes(); pCard(); pProd(); pQual(); pOS();
+    pResumo(); pFrota(); pRegNav(); pCaminhoes(); pCard(); pProd(); pQual(); pOS();
     montado = true;
   }
   // gancho de troca de página: gráficos desenhados com a página oculta ficam estreitos → redesenha ao entrar
