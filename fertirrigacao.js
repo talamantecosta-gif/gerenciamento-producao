@@ -568,16 +568,21 @@ window.Fertirrigacao = (function () {
   /** Recebe dados novos logo após a sincronização, sem recarregar a página. */
   function definir(dados) { D = dados; S = null; montar(); }
 
-  return { iniciar, definir, VERSAO, ARQ, get dados() { return D; } };
+  /** Funções de formatação e gráficos compartilhadas com as outras páginas (ex.: Pulverização). */
+  const util = { $, $$, nf, nfs, pc, esc, dBR, dBRa, addD, rangeD, semana, sum, avg, porNum, arred100, mix, cascata, animar, contar, toast, mover, W, passoBom, vazio, eixoY, pilula, barrasDia, grupos, linha, spark, kpi, COR, semMov };
+  return { iniciar, definir, VERSAO, ARQ, util, get dados() { return D; } };
 })();
 
 /* ---------- inicialização (login → layout → página) ---------- */
 (function () {
   const sair = document.getElementById('btnSair');
   if (sair) sair.addEventListener('click', () => { Acesso.logout(); location.reload(); });
-  Acesso.gate().then(user => {
+  // espera todos os scripts das páginas carregarem (pulverizacao.js vem depois deste arquivo)
+  const go = () => Acesso.gate().then(user => {
     if (window.Layout) { Layout.definirUsuario(user); Layout.iniciar(); }
     if (sair) sair.title = `Sair (${user})`;
     Fertirrigacao.iniciar(window.__FERT_DADOS__);
+    if (window.Pulverizacao) Pulverizacao.iniciar(window.__PULV_DADOS__);
   });
+  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', go); else go();
 })();

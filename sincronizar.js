@@ -5,6 +5,8 @@
      autorização de leitura. Em cada pasta (e um nível de subpastas) procura:
        - "Acompanhamento 2026.xlsm" (nome com Acompanhamento/Fertirrigação)
          → fertirrigacao.json (com o histórico da cota, PAINEL e fechamentos);
+       - "Pulverizadores.xlsx" (nome com Pulveriza) → pulverizacao.json
+         (correções da planilha refeitas a cada sincronização);
        - "Usuários site gerencial.xlsx" (nome com Usuário) → acesso.json
          (mesma regra do painel-agricola: inativo sai, senha < 8 mantém como
          estava, o usuário logado nunca é removido).
@@ -21,6 +23,7 @@ window.Sincronizar = (function () {
   const CFG_KEY = 'painel-github-producao', CFG_AGR = 'painel-github', SIG_KEY = 'painel-producao-assinaturas';
   const TIPOS = [
     { tipo: 'fert', rx: /(acompanhamento|fertirriga).*\.xls[xm]$/i, nome: 'Fertirrigação' },
+    { tipo: 'pulv', rx: /pulveriza.*\.xls[xm]$/i, nome: 'Pulverização' },
     { tipo: 'usuarios', rx: /usu[aá]rio.*\.xls[xm]$/i, nome: 'Usuários' },
   ];
 
@@ -138,7 +141,7 @@ window.Sincronizar = (function () {
   async function pastas() {
     if (!SUPORTA) { modal(`<h3>Pastas</h3><p>Para ler pastas do computador, abra o painel no <b>Google Chrome</b> ou no <b>Microsoft Edge</b> (no computador).</p><div class="ft-modal__acts"><button class="ft-btn" data-fechar>Fechar</button></div>`); return; }
     const l = await lerPastas(), perms = await Promise.all(l.map(temPerm));
-    const m = modal(`<h3><i class="fa-regular fa-folder-open"></i> Pastas sincronizadas</h3><p>O painel procura nestas pastas (e numa subpasta abaixo) a planilha <b>Acompanhamento 2026</b> e a planilha <b>Usuários site gerencial</b>. Se o mesmo arquivo estiver em duas pastas, vale o salvo por último.</p>
+    const m = modal(`<h3><i class="fa-regular fa-folder-open"></i> Pastas sincronizadas</h3><p>O painel procura nestas pastas (e numa subpasta abaixo) as planilhas <b>Acompanhamento 2026</b>, <b>Pulverizadores</b> e <b>Usuários site gerencial</b>. Se o mesmo arquivo estiver em duas pastas, vale o salvo por último.</p>
       <div class="ft-pastas">${l.length ? l.map((h, i) => `<div class="ft-pasta"><i class="fa-solid fa-folder"></i><b>${esc(h.name)}</b>${perms[i] ? '<span class="ft-tag ok">liberada</span>' : `<button class="ft-btn" data-lib="${i}">Liberar</button>`}<button class="ft-btn" data-rem="${i}" aria-label="Remover ${esc(h.name)}"><i class="fa-solid fa-trash"></i></button></div>`).join('') : '<div class="ft-vazio">Nenhuma pasta vinculada.</div>'}</div>
       <div class="ft-modal__acts"><button class="ft-btn" data-fechar>Fechar</button><button class="ft-btn" id="pAdd"><i class="fa-solid fa-folder-plus"></i>Adicionar pasta</button><button class="ft-btn pri" id="pSync"><i class="fa-solid fa-rotate"></i>Sincronizar</button></div>`);
     m.querySelector('#pAdd').onclick = async () => { try { await adicionarPasta(); } catch (e) { /* cancelou */ } pastas(); };
@@ -192,12 +195,12 @@ window.Sincronizar = (function () {
           try { await varrer(h, 0, achados, h.name); log(`Pasta <b>${esc(h.name)}</b> lida.`); } catch (e) { log(`Pasta <b>${esc(h.name)}</b>: não consegui ler (${esc(e.message || e)}).`, 'bad'); }
         }
       } else {
-        log('Este navegador não abre pastas: escolha a planilha Acompanhamento 2026.');
+        log('Este navegador não abre pastas: escolha a planilha (Acompanhamento 2026 ou Pulverizadores).');
         const f = await new Promise(ok => { const i = document.createElement('input'); i.type = 'file'; i.accept = '.xlsm,.xlsx'; i.onchange = () => ok(i.files[0] || null); i.click(); });
-        if (f) achados.fert = { f, pasta: '—' };
+        if (f) { const t = TIPOS.find(t => t.rx.test(f.name)); achados[t && t.tipo !== 'usuarios' ? t.tipo : 'fert'] = { f, pasta: '—' }; }
       }
       TIPOS.forEach(t => { const a = achados[t.tipo]; log(a ? `${t.nome}: <b>${esc(a.f.name)}</b> (${esc(a.pasta)}) · salva em ${new Date(a.f.lastModified).toLocaleString('pt-BR')}` : `${t.nome}: planilha não encontrada nas pastas.`, a ? '' : 'bad'); });
-      if (!achados.fert && !achados.usuarios) throw new Error('nenhuma planilha encontrada. Confira as pastas no botão Pastas.');
+      if (!achados.fert && !achados.pulv && !achados.usuarios) throw new Error('nenhuma planilha encontrada. Confira as pastas no botão Pastas.');
 
       const c = await cfg.get(), S0 = sigs.get(), S1 = { ...S0 }, arquivos = [];
       // fertirrigação
@@ -214,6 +217,22 @@ window.Sincronizar = (function () {
           const final = FertPlanilha.mesclar(anterior, novo); final.fonte = f.name; final.fonteSig = sig;
           arquivos.push({ path: ARQ, content: JSON.stringify(await Acesso.encryptJson(final)), dados: final });
           log(`Fertirrigação: cota do dia ${final.cota.data.split('-').reverse().join('/')} gravada · ${Object.keys(final.historico.cotas).length} dia(s) de cota no histórico.`, 'ok');
+        }
+      }
+      // pulverização
+      if (achados.pulv && window.PulvPlanilha) {
+        const AP = 'pulverizacao.json', f = achados.pulv.f, sig = `${f.name}|${f.lastModified}|${PulvPlanilha.VERSAO}|${window.Pulverizacao ? Pulverizacao.VERSAO : 0}`;
+        let anterior = null;
+        if (c && c.token) { try { const b = await lerRepoBruto(c, AP); anterior = b ? (await Acesso.readJson(b)).data : null; } catch (e) { if (/token/.test(e.message)) throw e; } }
+        if (!anterior) anterior = (window.Pulverizacao && Pulverizacao.dados) || await (async () => { const b = await lerSite(AP); return b ? (await Acesso.readJson(b)).data : null; })();
+        if (anterior && anterior.fonteSig === sig) log('Pulverização: sem mudança desde a última publicação.');
+        else {
+          log('Lendo a planilha dos pulverizadores…');
+          const X = await carregaXlsx();
+          const novo = PulvPlanilha.ler(X, await f.arrayBuffer());
+          const final = PulvPlanilha.mesclar(anterior, novo); final.fonte = f.name; final.fonteSig = sig;
+          arquivos.push({ path: AP, content: JSON.stringify(await Acesso.encryptJson(final)), pulv: final });
+          log(`Pulverização: status de ${String(final.status.data || '').split('-').reverse().join('/')} · ${final.producao.length} apontamentos de produção · ${final.os.length} OS.`, 'ok');
         }
       }
       // usuários
@@ -240,7 +259,9 @@ window.Sincronizar = (function () {
         sigs.set(S1);
         log(`Sem token do GitHub: baixei ${arquivos.map(a => '<b>' + a.path + '</b>').join(' e ')}. Suba no repositório (Add file → Upload files) ou configure o token no botão do GitHub.`, 'ok');
       }
-      const fert = arquivos.find(a => a.dados); if (fert) { Fertirrigacao.definir(fert.dados); if (window.Layout && Layout.animar) Layout.animar(document); }
+      const fert = arquivos.find(a => a.dados); if (fert) Fertirrigacao.definir(fert.dados);
+      const pz = arquivos.find(a => a.pulv); if (pz && window.Pulverizacao) Pulverizacao.definir(pz.pulv);
+      if ((fert || pz) && window.Layout && Layout.animar) Layout.animar(document);
     } catch (e) {
       if (e && e.name === 'AbortError') log('Sincronização cancelada.');
       else log('Não foi possível sincronizar: ' + esc(e.message || e), 'bad');
