@@ -57,12 +57,15 @@ window.Sincronizar = (function () {
     for (const x of l) if (x.isSameEntry && await x.isSameEntry(h)) return l;
     l.push(h); await gravarPastas(l); return l;
   }
+  // lê o que conseguir: arquivo bloqueado ou subpasta sem acesso é pulado, sem parar a pasta inteira
   async function varrer(dir, nivel, achados, pasta) {
     for await (const [nome, h] of dir.entries()) {
-      if (h.kind === 'file' && !nome.startsWith('~$')) {
-        const t = TIPOS.find(t => t.rx.test(nome));
-        if (t) { const f = await h.getFile(); const at = achados[t.tipo]; if (!at || f.lastModified > at.f.lastModified) achados[t.tipo] = { f, pasta }; }
-      } else if (h.kind === 'directory' && nivel < 1) await varrer(h, nivel + 1, achados, pasta);
+      try {
+        if (h.kind === 'file' && !nome.startsWith('~$')) {
+          const t = TIPOS.find(t => t.rx.test(nome));
+          if (t) { const f = await h.getFile(); const at = achados[t.tipo]; if (!at || f.lastModified > at.f.lastModified) achados[t.tipo] = { f, pasta }; }
+        } else if (h.kind === 'directory' && nivel < 1) await varrer(h, nivel + 1, achados, pasta);
+      } catch (e) { log(`<b>${esc(nome)}</b> (${esc(pasta)}): sem acesso ou aberto em outro programa — pulei.`, 'bad'); }
     }
   }
 
@@ -207,16 +210,23 @@ window.Sincronizar = (function () {
           try { await varrer(h, 0, achados, h.name); log(`Pasta <b>${esc(h.name)}</b> lida.`); } catch (e) { log(`Pasta <b>${esc(h.name)}</b>: não consegui ler (${esc(e.message || e)}).`, 'bad'); }
         }
       } else {
-        log('Este navegador não abre pastas: escolha a planilha (Acompanhamento 2026 ou Pulverizadores).');
-        const f = await new Promise(ok => { const i = document.createElement('input'); i.type = 'file'; i.accept = '.xlsm,.xlsx'; i.onchange = () => ok(i.files[0] || null); i.click(); });
-        if (f) { const t = TIPOS.find(t => t.rx.test(f.name)); achados[t && t.tipo !== 'usuarios' ? t.tipo : 'fert'] = { f, pasta: '—' }; }
+        log('Este navegador não abre pastas: escolha as planilhas que você tem (pode marcar várias).');
+        const fs = await new Promise(ok => { const i = document.createElement('input'); i.type = 'file'; i.multiple = true; i.accept = '.xlsm,.xlsx,.xls'; i.onchange = () => ok([...i.files]); i.click(); });
+        fs.forEach(f => { const t = TIPOS.find(t => t.rx.test(f.name)); if (t) achados[t.tipo] = { f, pasta: 'arquivo escolhido' }; else log(`<b>${esc(f.name)}</b>: não reconheci essa planilha pelo nome.`, 'bad'); });
       }
-      TIPOS.forEach(t => { const a = achados[t.tipo]; log(a ? `${t.nome}: <b>${esc(a.f.name)}</b> (${esc(a.pasta)}) · salva em ${new Date(a.f.lastModified).toLocaleString('pt-BR')}` : `${t.nome}: planilha não encontrada nas pastas.`, a ? '' : 'bad'); });
-      if (!achados.fert && !achados.pulv && !achados.avi && !achados.abast && !achados.usuarios) throw new Error('nenhuma planilha encontrada. Confira as pastas no botão Pastas.');
+      const vistas = TIPOS.filter(t => achados[t.tipo] && !(t.tipo === 'usuarios' && window.Layout && !Layout.admin()));
+      vistas.forEach(t => { const a = achados[t.tipo]; log(`${t.nome}: <b>${esc(a.f.name)}</b> (${esc(a.pasta)}) · salva em ${new Date(a.f.lastModified).toLocaleString('pt-BR')}`); });
+      const fora = TIPOS.filter(t => !achados[t.tipo] && !(t.tipo === 'usuarios' && window.Layout && !Layout.admin()));
+      if (fora.length && vistas.length) log(`Não estão nas suas pastas: ${fora.map(t => t.nome).join(', ')}. Essas partes do painel continuam como estão.`);
+      if (!vistas.length) throw new Error('nenhuma planilha encontrada nas suas pastas. Confira no botão Pastas.');
 
       const c = await cfg.get(), S0 = sigs.get(), S1 = { ...S0 }, arquivos = [];
+      // cada planilha é independente: se uma falhar (sem acesso, aberta/bloqueada, formato diferente),
+      // as outras continuam e o que deu certo é publicado; a que falhou mantém o que já estava no painel.
+      const falhas = [];
+      const etapa = async (nome, fn) => { try { await fn(); } catch (e) { if (e && /token|GitHub/.test(e.message || '')) throw e; falhas.push(nome); log(`${nome}: não consegui atualizar (${esc((e && e.message) || e)}). O painel mantém o que já estava publicado.`, 'bad'); } };
       // fertirrigação
-      if (achados.fert) {
+      if (achados.fert) await etapa('Fertirrigação', async () => {
         const f = achados.fert.f, sig = `${f.name}|${f.lastModified}|${FertPlanilha.VERSAO}|${Fertirrigacao.VERSAO}`;
         let anterior = null;
         if (c && c.token) { try { const b = await lerRepoBruto(c, ARQ); anterior = b ? (await Acesso.readJson(b)).data : null; } catch (e) { if (/token/.test(e.message)) throw e; } }
@@ -230,9 +240,9 @@ window.Sincronizar = (function () {
           arquivos.push({ path: ARQ, content: JSON.stringify(await Acesso.encryptJson(final)), dados: final });
           log(`Fertirrigação: cota do dia ${final.cota.data.split('-').reverse().join('/')} gravada · ${Object.keys(final.historico.cotas).length} dia(s) de cota no histórico.`, 'ok');
         }
-      }
+      });
       // pulverização
-      if (achados.pulv && window.PulvPlanilha) {
+      if (achados.pulv && window.PulvPlanilha) await etapa('Pulverização', async () => {
         const AP = 'pulverizacao.json', f = achados.pulv.f, sig = `${f.name}|${f.lastModified}|${PulvPlanilha.VERSAO}|${window.Pulverizacao ? Pulverizacao.VERSAO : 0}`;
         let anterior = null;
         if (c && c.token) { try { const b = await lerRepoBruto(c, AP); anterior = b ? (await Acesso.readJson(b)).data : null; } catch (e) { if (/token/.test(e.message)) throw e; } }
@@ -246,9 +256,9 @@ window.Sincronizar = (function () {
           arquivos.push({ path: AP, content: JSON.stringify(await Acesso.encryptJson(final)), pulv: final });
           log(`Pulverização: status de ${String(final.status.data || '').split('-').reverse().join('/')} · ${final.producao.length} apontamentos de produção · ${final.os.length} OS.`, 'ok');
         }
-      }
+      });
       // aviação (TRAVICAR)
-      if (achados.avi && window.AviPlanilha) {
+      if (achados.avi && window.AviPlanilha) await etapa('Aviação', async () => {
         const AA = 'aviacao.json', f = achados.avi.f, sig = `${f.name}|${f.lastModified}|${AviPlanilha.VERSAO}|${window.Aviacao ? Aviacao.VERSAO : 0}`;
         let anterior = null;
         if (c && c.token) { try { const b = await lerRepoBruto(c, AA); anterior = b ? (await Acesso.readJson(b)).data : null; } catch (e) { if (/token/.test(e.message)) throw e; } }
@@ -263,9 +273,9 @@ window.Sincronizar = (function () {
           const cr = novo.correcoes || {};
           log(`Aviação: ${novo.trabalhos.length} trabalhos no relatório · ${final.trabalhos.length} no histórico${cr.repetidos ? ` · ${cr.repetidos} repetido(s) unificado(s)` : ''}.`, 'ok');
         }
-      }
+      });
       // abastecimentos dos aplicadores / carregamentos dos caminhões (fechamento de turno da fertirrigação)
-      if (achados.abast && window.AbastPlanilha) {
+      if (achados.abast && window.AbastPlanilha) await etapa('Abastecimentos', async () => {
         const AQ = 'abastecimentos.json', f = achados.abast.f, sig = `${f.name}|${f.lastModified}|${AbastPlanilha.VERSAO}`;
         let anterior = null;
         if (c && c.token) { try { const b = await lerRepoBruto(c, AQ); anterior = b ? (await Acesso.readJson(b)).data : null; } catch (e) { if (/token/.test(e.message)) throw e; } }
@@ -280,10 +290,10 @@ window.Sincronizar = (function () {
           const dias = [...new Set(novo.registros.map(r => r.d.split('-').reverse().slice(0, 2).join('/') + ' ' + r.t))].sort((x, y) => x.slice(3, 5).localeCompare(y.slice(3, 5)) || x.localeCompare(y));
           log(`Abastecimentos: ${novo.registros.filter(r => r.tipo === 'abast').length} abastecimentos e ${novo.registros.filter(r => r.tipo === 'carreg').length} carregamentos · ${dias.join(', ')} (turno C após 00h conta no dia em que começou).`, 'ok');
         }
-      }
+      });
       // usuários
       if (achados.usuarios && window.Layout && !Layout.admin()) log('Usuários: só o administrador do painel atualiza os acessos — planilha ignorada.');
-      else if (achados.usuarios) {
+      else if (achados.usuarios) await etapa('Usuários', async () => {
         const f = achados.usuarios.f, sig = `${f.name}|${f.lastModified}|editores`; // '|editores': força reler a planilha uma vez com a coluna Atualiza painel
         if (S0.usuarios === sig) log('Usuários: sem mudança desde a última publicação.');
         else {
@@ -294,13 +304,13 @@ window.Sincronizar = (function () {
           log(`Usuários: ${r.total} liberado(s)${r.removidos ? `, ${r.removidos} removido(s)` : ''}${r.editores != null ? ` · ${r.editores} podem atualizar o painel` : ''}.`, 'ok');
           r.avisos.forEach(a => log('Usuários: ' + esc(a), 'bad'));
         }
-      }
-      if (!arquivos.length) { log('Nada a publicar.', 'ok'); return; }
+      });
+      if (!arquivos.length) { log(falhas.length ? 'Nada novo para publicar.' : 'Nada a publicar: tudo já está atualizado.', 'ok'); return; }
       if (c && c.token) {
         log(`Publicando ${arquivos.map(a => a.path).join(' e ')} em <b>${esc(c.owner + '/' + c.repo)}</b>…`);
         await commit(c, arquivos.map(({ path, content }) => ({ path, content })), `Sincronização: ${arquivos.map(a => a.path).join(', ')} · ${new Date().toLocaleString('pt-BR')}`);
         sigs.set(S1);
-        log('Publicado. O site atualiza em 1 a 2 minutos; esta tela já mostra os dados novos.', 'ok');
+        log(`Publicado${falhas.length ? ` (exceto ${falhas.join(', ')})` : ''}. O site atualiza em 1 a 2 minutos; esta tela já mostra os dados novos.`, 'ok');
       } else {
         arquivos.forEach(a => baixar(a.content, a.path));
         sigs.set(S1);
