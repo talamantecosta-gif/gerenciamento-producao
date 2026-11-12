@@ -266,7 +266,7 @@ window.Sincronizar = (function () {
       // usuários
       if (achados.usuarios && window.Layout && !Layout.admin()) log('Usuários: só o administrador do painel atualiza os acessos — planilha ignorada.');
       else if (achados.usuarios) {
-        const f = achados.usuarios.f, sig = `${f.name}|${f.lastModified}`;
+        const f = achados.usuarios.f, sig = `${f.name}|${f.lastModified}|editores`; // '|editores': força reler a planilha uma vez com a coluna Atualiza painel
         if (S0.usuarios === sig) log('Usuários: sem mudança desde a última publicação.');
         else {
           log('Atualizando os usuários do painel…');
