@@ -441,17 +441,18 @@
 .fc-ab__tu small::before { content: 'Turno '; } .fc-ab__tu b { font-size: 16px; color: var(--ink); }
 /* turno: cartões por frente */
 .fc-ab__frs { display: grid; grid-template-columns: repeat(var(--n, 4), minmax(0, 1fr)); gap: 10px; }
-.fc-ab__f { border: 1px solid var(--line); border-radius: 14px; padding: 12px 14px; text-align: center; }
-.fc-ab__f h5 { margin: 0 0 8px; font-size: 13px; font-weight: 800; color: var(--ink); }
-.fc-ab__l { display: flex; flex-direction: column; align-items: center; padding: 9px 8px 10px; border-radius: 11px; background: var(--ab-bg); }
-.fc-ab__l + .fc-ab__l { margin-top: 6px; }
+.fc-ab__f { border: 1px solid var(--line); border-radius: 14px; padding: 12px; text-align: center; display: flex; flex-direction: column; gap: 6px; min-width: 0; }
+.fc-ab__f h5 { margin: 0 0 2px; font-size: 13px; font-weight: 800; color: var(--ink); }
+.fc-ab__l { display: flex; flex-direction: column; align-items: center; justify-content: center; height: 132px; padding: 8px; border-radius: 11px; background: var(--ab-bg); min-width: 0; }
+
 .fc-ab__l > i { color: var(--ab); font-size: 12px; }
 .fc-ab__l > b { font-size: 24px; font-weight: 800; font-stretch: 85%; line-height: 1.1; color: var(--ink); }
 .fc-ab__l > span { font-size: 11px; color: var(--ink); font-weight: 600; }
-.fc-ab__l > em { font-style: normal; font-size: 11px; color: var(--ab); font-weight: 700; min-height: 14px; }
+.fc-ab__l > em { font-style: normal; font-size: 11px; color: var(--ab); font-weight: 700; line-height: 16px; }
+.fc-ab__l.z > em { color: transparent; }
 .fc-ab__l.z { background: #F4F6F2; } .fc-ab__l.z > i, .fc-ab__l.z > b, .fc-ab__l.z > span { color: #B9C4B5; }
-.fc-ab__fr { display: flex; flex-wrap: wrap; justify-content: center; gap: 4px; margin-top: 6px; }
-.fc-ab__fr span { font-size: 10.5px; font-weight: 700; background: #fff; color: var(--ink); border-radius: 6px; padding: 2px 6px; }
+.fc-ab__fr { display: flex; flex-wrap: nowrap; justify-content: center; gap: 4px; margin-top: 6px; height: 20px; max-width: 100%; overflow: hidden; }
+.fc-ab__fr span { flex: none; line-height: 16px; font-size: 10.5px; font-weight: 700; background: #fff; color: var(--ink); border-radius: 6px; padding: 2px 6px; }
 .fc-ab__fr small { color: var(--ab); margin-left: 2px; }
 /* dia: uma tabela por tipo */
 .fc-ab__tbs { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 12px; }

@@ -330,7 +330,7 @@ window.Fertirrigacao = (function () {
       // turno: um cartão por frente, abastecimento e carregamento em linhas separadas
       corpo = `<div class="fc-ab__frs" style="--n:${Math.min(4, frs.length)}">${frs.map(f => {
         const lin = tipo => { const X = sel(f, T, tipo), c = TIPO[tipo], fr = frotas(X);
-          return `<div class="fc-ab__l fc-ab--${tipo}${X.length ? '' : ' z'}"><i class="fa-solid ${c.ic}"></i><b>${X.length}</b><span>${c.un[X.length === 1 ? 0 : 1]}</span><em>${X.length ? tm(X) : ''}</em>${fr.length ? `<div class="fc-ab__fr">${fr.map(([k, n]) => `<span>${esc(k)}<small>×${n}</small></span>`).join('')}</div>` : ''}</div>`; };
+          return `<div class="fc-ab__l fc-ab--${tipo}${X.length ? '' : ' z'}"><i class="fa-solid ${c.ic}"></i><b>${X.length}</b><span>${c.un[X.length === 1 ? 0 : 1]}</span><em>${X.length ? tm(X) : '—'}</em><div class="fc-ab__fr" title="${esc(fr.map(([k, n]) => k + ' ×' + n).join(' · '))}">${fr.length ? fr.map(([k, n]) => `<span>${esc(k)}<small>×${n}</small></span>`).join('') : '&nbsp;'}</div></div>`; };
         return `<div class="fc-ab__f"><h5>${nomeF(f)}</h5>${lin('abast')}${lin('carreg')}</div>`;
       }).join('')}</div>`;
     } else {
