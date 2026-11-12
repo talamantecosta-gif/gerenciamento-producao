@@ -4,13 +4,16 @@
    - 520 - CARREGANDO INSUMOS             → carregamento do caminhão de vinhaça
    Lê pelas colunas: Data · Hora Início · Turno · Frota · Frente · Cód. Fazenda ·
    Descrição da Operação · Tempo Duração Operação. (O nome do operador não é publicado.)
-   Histórico: os dias que vierem na planilha nova substituem os mesmos dias já publicados;
-   os demais dias ficam guardados.
+   Turno C: começa às 23h de um dia e vai até 07h do dia seguinte. O SGPA grava a data do
+   calendário, então o que acontece entre 00h e 07h no turno C volta para o dia em que o turno
+   começou (ex.: 12/11 às 03h, turno C → conta em 11/11).
+   Histórico: cada dia + turno que vier na planilha nova substitui o mesmo dia + turno já
+   publicado; os demais ficam guardados.
    window.AbastPlanilha = { ler(XLSX, buf), mesclar(anterior, novo), VERSAO }
    ========================================================================= */
 (function (root) {
   'use strict';
-  const VERSAO = 1;
+  const VERSAO = 2;
   const COLS = { d: /^data$/i, hora: /hora\s*in[ií]cio/i, t: /^turno$/i, frota: /^frota$/i, frente: /^frente$/i, faz: /fazenda/i, op: /descri[cç][aã]o\s*da\s*opera/i, dur: /dura[cç][aã]o/i };
   const OPS = [{ tipo: 'abast', rx: /^\s*223803\b|abastecimento\s+do\s+implemento/i }, { tipo: 'carreg', rx: /^\s*520\b|carregando\s+insumo/i }];
   const vazio = v => v == null || (typeof v === 'string' && /^[\s\-–—]*$/.test(v));
@@ -26,6 +29,7 @@
     const m = String(v).trim().match(/^(\d+):(\d{1,2})(?::(\d{1,2}))?$/); return m ? +m[1] * 60 + +m[2] + (+m[3] || 0) / 60 : null;
   }
   /** "FRENTE FERTIRRIGAÇÃO 3" → "F3" (mesma chave das frentes da fertirrigação) */
+  const menos1 = d => { const x = new Date(d + 'T12:00:00Z'); x.setUTCDate(x.getUTCDate() - 1); return x.toISOString().slice(0, 10); };
   const frente = v => { const m = String(v || '').match(/(\d+)\s*$/); return m ? 'F' + m[1] : null; };
 
   function ler(XLSX, buf) {
@@ -42,15 +46,18 @@
       const op = OPS.find(o => o.rx.test(String(g(r, 'op')))); const d = iso(g(r, 'd'));
       const t = String(g(r, 't') || '').trim().toUpperCase().replace(/^TURNO\s*/, '');
       if (!op || !d || !/^[ABC]$/.test(t)) { ignorados++; continue; }
-      const dur = minutos(g(r, 'dur'));
-      registros.push({ d, t, tipo: op.tipo, frota: String(g(r, 'frota') ?? '').trim(), f: frente(g(r, 'frente')), faz: vazio(g(r, 'faz')) ? null : String(g(r, 'faz')).trim(), hora: minutos(g(r, 'hora')), dur: dur != null && dur > 0 && dur < 240 ? dur : null });
+      const dur = minutos(g(r, 'dur')), hora = minutos(g(r, 'hora'));
+      const dTurno = t === 'C' && hora != null && hora < 7 * 60 ? menos1(d) : d;
+      registros.push({ d: dTurno, t, tipo: op.tipo, frota: String(g(r, 'frota') ?? '').trim(), f: frente(g(r, 'frente')), faz: vazio(g(r, 'faz')) ? null : String(g(r, 'faz')).trim(), hora, dur: dur != null && dur > 0 && dur < 240 ? dur : null });
     }
     registros.sort((a, b) => a.d.localeCompare(b.d) || a.t.localeCompare(b.t) || (a.hora ?? -1) - (b.hora ?? -1));
     return { versao: VERSAO, gerado: new Date().toISOString(), registros, correcoes: { ignorados } };
   }
   function mesclar(anterior, novo) {
-    const dias = new Set(novo.registros.map(r => r.d));
-    const velhos = ((anterior && anterior.registros) || []).filter(r => !dias.has(r.d));
+    const chaves = new Set(novo.registros.map(r => r.d + '|' + r.t));
+    // dados publicados antes da regra do turno C (versão 1): corrige a data também
+    const ant = ((anterior && anterior.registros) || []).map(r => (anterior.versao || 1) < 2 && r.t === 'C' && r.hora != null && r.hora < 7 * 60 ? { ...r, d: menos1(r.d) } : r);
+    const velhos = ant.filter(r => !chaves.has(r.d + '|' + r.t));
     return { ...novo, registros: [...velhos, ...novo.registros].sort((a, b) => a.d.localeCompare(b.d) || a.t.localeCompare(b.t) || (a.hora ?? -1) - (b.hora ?? -1)) };
   }
   const api = { ler, mesclar, VERSAO };

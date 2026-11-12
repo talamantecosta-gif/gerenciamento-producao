@@ -277,8 +277,8 @@ window.Sincronizar = (function () {
           const novo = AbastPlanilha.ler(X, await f.arrayBuffer());
           const final = AbastPlanilha.mesclar(anterior, novo); final.fonte = f.name; final.fonteSig = sig;
           arquivos.push({ path: AQ, content: JSON.stringify(await Acesso.encryptJson(final)), abast: final });
-          const dias = [...new Set(novo.registros.map(r => r.d))].sort().map(d => d.split('-').reverse().slice(0, 2).join('/'));
-          log(`Abastecimentos: ${novo.registros.filter(r => r.tipo === 'abast').length} abastecimentos e ${novo.registros.filter(r => r.tipo === 'carreg').length} carregamentos (${dias.join(', ')}).`, 'ok');
+          const dias = [...new Set(novo.registros.map(r => r.d.split('-').reverse().slice(0, 2).join('/') + ' ' + r.t))].sort((x, y) => x.slice(3, 5).localeCompare(y.slice(3, 5)) || x.localeCompare(y));
+          log(`Abastecimentos: ${novo.registros.filter(r => r.tipo === 'abast').length} abastecimentos e ${novo.registros.filter(r => r.tipo === 'carreg').length} carregamentos · ${dias.join(', ')} (turno C após 00h conta no dia em que começou).`, 'ok');
         }
       }
       // usuários
