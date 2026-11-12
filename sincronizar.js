@@ -106,7 +106,9 @@ window.Sincronizar = (function () {
   const COL_USER = ['usuario', 'usuarios', 'login', 'user', 'nome de usuario', 'usuario do site', 'usuario painel'];
   const COL_SENHA = ['senha', 'password', 'senha do site', 'senha painel'];
   const COL_ATIVO = ['ativo', 'status', 'situacao', 'acesso', 'liberado'];
-  const achaCab = rows => { for (let i = 0; i < Math.min(rows.length, 30); i++) { const h = (rows[i] || []).map(normU); const u = h.findIndex(x => COL_USER.includes(x)), p = h.findIndex(x => COL_SENHA.includes(x)); if (u >= 0 && p >= 0) return { i, u, p, a: h.findIndex(x => COL_ATIVO.includes(x)) }; } return null; };
+  // coluna opcional: quem pode Sincronizar/publicar (Sim/X/1/Editor)
+  const COL_EDITOR = ['atualiza painel', 'atualizar painel', 'pode atualizar', 'editor', 'edita', 'publica', 'publicar', 'sincroniza', 'sincronizar'];
+  const achaCab = rows => { for (let i = 0; i < Math.min(rows.length, 30); i++) { const h = (rows[i] || []).map(normU); const u = h.findIndex(x => COL_USER.includes(x)), p = h.findIndex(x => COL_SENHA.includes(x)); if (u >= 0 && p >= 0) return { i, u, p, a: h.findIndex(x => COL_ATIVO.includes(x)), e: h.findIndex(x => COL_EDITOR.includes(x)) }; } return null; };
   async function atualizarUsuarios(file, c) {
     const X = await carregaXlsx();
     const wb = X.read(await file.arrayBuffer(), { type: 'array' });
@@ -114,10 +116,12 @@ window.Sincronizar = (function () {
     for (const n of wb.SheetNames) { const rows = X.utils.sheet_to_json(wb.Sheets[n], { header: 1, raw: false, defval: null }); const cab = achaCab(rows); if (cab) { tab = { rows, cab }; break; } }
     if (!tab) throw new Error('não encontrei as colunas "Usuário" e "Senha"');
     const inativo = v => /^(nao|n|inativo|bloqueado|desativado|removido|sem acesso|0|false)$/.test(normU(v));
-    const lista = new Map(), avisos = [];
+    const lista = new Map(), avisos = [], editores = new Set();
+    const ehEditor = v => /^(sim|s|x|1|true|editor|admin|pode|yes)$/.test(normU(v));
     tab.rows.slice(tab.cab.i + 1).forEach((r, k) => {
       const u = String(r[tab.cab.u] ?? '').trim().toLowerCase(); if (!u) return;
       if (tab.cab.a >= 0 && inativo(r[tab.cab.a])) return;
+      if (tab.cab.e >= 0 && ehEditor(r[tab.cab.e])) editores.add(u);
       const p = String(r[tab.cab.p] ?? '');
       if (!Acesso.checkPass(p)) { avisos.push(`a senha de ${u} tem menos de 8 caracteres (linha ${tab.cab.i + k + 2}) — mantive o acesso como estava`); lista.set(u, null); return; }
       lista.set(u, p);
@@ -131,7 +135,11 @@ window.Sincronizar = (function () {
     let cfgN = cfgA, removidos = 0;
     for (const [u, p] of lista) if (p) cfgN = await Acesso.addUser(cfgN, u, p);
     for (const x of atuais) { const nome = String(x.nome || '').toLowerCase(); if (lista.has(nome) || nome === eu || nome === '(sem nome)') continue; cfgN = await Acesso.removeUser(cfgN, x.id); removidos++; }
-    return { cfg: cfgN, total: cfgN.usuarios.length, removidos, avisos };
+    if (eu) editores.add(eu);
+    // sem a coluna na planilha, mantém a lista de editores que já estava publicada
+    if (tab.cab.e >= 0) cfgN = { ...cfgN, editores: await Acesso.encryptJson([...editores].filter(u => lista.has(u) || u === eu)) };
+    else if (cfgA.editores) cfgN = { ...cfgN, editores: cfgA.editores };
+    return { cfg: cfgN, total: cfgN.usuarios.length, removidos, avisos, editores: tab.cab.e >= 0 ? editores.size : null };
   }
 
   /* ---------- janelas ---------- */
@@ -256,7 +264,8 @@ window.Sincronizar = (function () {
         }
       }
       // usuários
-      if (achados.usuarios) {
+      if (achados.usuarios && window.Layout && !Layout.admin()) log('Usuários: só o administrador do painel atualiza os acessos — planilha ignorada.');
+      else if (achados.usuarios) {
         const f = achados.usuarios.f, sig = `${f.name}|${f.lastModified}`;
         if (S0.usuarios === sig) log('Usuários: sem mudança desde a última publicação.');
         else {
@@ -264,7 +273,7 @@ window.Sincronizar = (function () {
           const r = await atualizarUsuarios(f, c);
           arquivos.push({ path: 'acesso.json', content: JSON.stringify(r.cfg, null, 1) });
           S1.usuarios = sig;
-          log(`Usuários: ${r.total} liberado(s)${r.removidos ? `, ${r.removidos} removido(s)` : ''}.`, 'ok');
+          log(`Usuários: ${r.total} liberado(s)${r.removidos ? `, ${r.removidos} removido(s)` : ''}${r.editores != null ? ` · ${r.editores} podem atualizar o painel` : ''}.`, 'ok');
           r.avisos.forEach(a => log('Usuários: ' + esc(a), 'bad'));
         }
       }

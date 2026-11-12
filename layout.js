@@ -113,9 +113,22 @@
   L.selo = () => {}; // selos de notificação desativados
 
   // quem pode importar e publicar; os demais só visualizam
-  const EDITORES = ['talamanteneto'];
-  L.definirUsuario = u => document.body.classList.toggle('is-editor', EDITORES.includes(String(u || '').trim().toLowerCase()));
+  // ADMIN: sempre vê os botões e é o único que atualiza os usuários (acesso.json).
+  // Os demais editores vêm da coluna "Atualiza painel" da planilha de usuários, gravada
+  // criptografada no acesso.json (só quem faz login consegue ler a lista).
+  const ADMIN = ['talamanteneto'];
+  const norm = u => String(u || '').trim().toLowerCase();
+  L.definirUsuario = async u => {
+    const eu = norm(u), b = document.body;
+    b.classList.toggle('is-admin', ADMIN.includes(eu));
+    b.classList.toggle('is-editor', ADMIN.includes(eu));
+    try {
+      const cfg = window.Acesso && Acesso.config;
+      if (cfg && cfg.editores) { const lista = await Acesso.decryptJson(cfg.editores); if (Array.isArray(lista) && lista.map(norm).includes(eu)) b.classList.add('is-editor'); }
+    } catch (e) { /* lista ilegível: fica só o admin */ }
+  };
   L.editor = () => document.body.classList.contains('is-editor');
+  L.admin = () => document.body.classList.contains('is-admin');
 
   window.Layout = L;
 })();
