@@ -21,7 +21,7 @@ window.Fertirrigacao = (function () {
     pil: { nome: 'Piloto automático', curto: 'Piloto', ic: 'fa-location-crosshairs', meta: null, maior: true, pct: true },
   };
 
-  let D = null, FR = [], IX = {}, S = null, ligado = false;
+  let D = null, FR = [], IX = {}, S = null, ligado = false, AB = null; // AB = abastecimentos.json (planilha Abastecimentos)
 
   /* ---------- utilidades ---------- */
   const $ = (s, el = document) => el.querySelector(s), $$ = (s, el = document) => [...el.querySelectorAll(s)];
@@ -305,6 +305,47 @@ window.Fertirrigacao = (function () {
   /* =================== 3. FECHAMENTO DE TURNO (imagem compacta) =================== */
   function turnoPadrao(d) { for (const t of ['C', 'B', 'A']) if (FR.some(f => (IX.ha[d + '|' + f + '|' + t] || 0) > 0)) return t; return 'A'; }
   const pill = q => `<span class="fc-p" style="background:${COR[st(q)]}">${pc(q)}</span>`;
+  /* abastecimentos (223803) dos aplicadores e carregamentos (520) dos caminhões, por frente e turno */
+  function abastSec(d, T, fs) {
+    const L = ((AB && AB.registros) || []).filter(r => r.d === d);
+    if (!L.length) return '';
+    const dia = T === 'dia';
+    const frs = [...new Set([...fs, ...L.map(r => r.f).filter(Boolean)])].sort(porNum);
+    const sel = (f, t, tipo) => L.filter(r => (!f || r.f === f) && (t === 'dia' || r.t === t) && r.tipo === tipo);
+    const tm = X => { const v = avg(X.map(r => r.dur)); return v == null ? '—' : nf(v, 0) + ' min'; };
+    const frotas = X => { const g = {}; X.forEach(r => g[r.frota] = (g[r.frota] || 0) + 1); return Object.entries(g).sort((a, b) => b[1] - a[1]); };
+    const TIPO = {
+      abast: { nome: 'Abastecimentos', quem: 'aplicadores', ic: 'fa-gas-pump', un: ['abastecimento', 'abastecimentos'] },
+      carreg: { nome: 'Carregamentos', quem: 'caminhões', ic: 'fa-truck', un: ['carregamento', 'carregamentos'] },
+    };
+    // blocos de resumo (um por tipo)
+    const bloco = tipo => {
+      const X = sel(null, T, tipo), c = TIPO[tipo], nf_ = frotas(X).length;
+      const quebra = dia ? `<div class="fc-ab__tu">${TU.map(t => `<span><small>${t}</small><b>${sel(null, t, tipo).length}</b></span>`).join('')}</div>` : '';
+      return `<div class="fc-ab__k fc-ab--${tipo}"><div class="fc-ab__ic"><i class="fa-solid ${c.ic}"></i></div>
+        <div class="fc-ab__kt"><small>${c.nome} · ${c.quem}</small><b>${X.length}</b><span>Tempo médio <b>${tm(X)}</b>${nf_ ? ` · ${nf_} ${nf_ > 1 ? c.quem : c.quem.replace(/ões$/, 'ão').replace(/es$/, '')}` : ''}</span></div>${quebra}</div>`;
+    };
+    let corpo;
+    if (!dia) {
+      // turno: um cartão por frente, abastecimento e carregamento em linhas separadas
+      corpo = `<div class="fc-ab__frs" style="--n:${Math.min(4, frs.length)}">${frs.map(f => {
+        const lin = tipo => { const X = sel(f, T, tipo), c = TIPO[tipo], fr = frotas(X);
+          return `<div class="fc-ab__l fc-ab--${tipo}${X.length ? '' : ' z'}"><i class="fa-solid ${c.ic}"></i><b>${X.length}</b><span>${c.un[X.length === 1 ? 0 : 1]}</span><em>${X.length ? tm(X) : ''}</em>${fr.length ? `<div class="fc-ab__fr">${fr.map(([k, n]) => `<span>${esc(k)}<small>×${n}</small></span>`).join('')}</div>` : ''}</div>`; };
+        return `<div class="fc-ab__f"><h5>${nomeF(f)}</h5>${lin('abast')}${lin('carreg')}</div>`;
+      }).join('')}</div>`;
+    } else {
+      // dia: uma tabela para cada tipo, turnos lado a lado
+      const tab = tipo => { const c = TIPO[tipo];
+        const cel = (f, t) => { const n = sel(f, t, tipo).length; return `<td class="${t === 'dia' ? 'tt' : ''}${n ? '' : ' z'}">${n}</td>`; };
+        return `<div class="fc-ab__tb fc-ab--${tipo}"><div class="fc-ab__th"><i class="fa-solid ${c.ic}"></i>${c.nome} <small>· ${c.quem}</small></div>
+          <table><thead><tr><th></th>${TU.map(t => `<th>Turno ${t}</th>`).join('')}<th>Dia</th></tr></thead><tbody>
+          ${frs.map(f => `<tr><th>${nomeF(f)}</th>${TU.map(t => cel(f, t)).join('')}${cel(f, 'dia')}</tr>`).join('')}
+          <tr class="tot"><th>Total</th>${TU.map(t => cel(null, t)).join('')}${cel(null, 'dia')}</tr>
+          <tr class="tm"><th>Tempo médio</th>${TU.map(t => `<td>${tm(sel(null, t, tipo))}</td>`).join('')}<td class="tt">${tm(sel(null, 'dia', tipo))}</td></tr></tbody></table></div>`; };
+      corpo = `<div class="fc-ab__tbs">${tab('abast')}${tab('carreg')}</div>`;
+    }
+    return `<div class="fc-sec"><h4>Abastecimentos e carregamentos${dia ? ' do dia' : ' · turno ' + T}</h4><div class="fc-ab__ks">${bloco('abast')}${bloco('carreg')}</div>${corpo}</div>`;
+  }
   function pFech() {
     if (!S.fechDia) { S.fechDia = IX.ultProd; S.fechT = turnoPadrao(S.fechDia); }
     const d = S.fechDia, T = S.fechT, dia = T === 'dia';
@@ -332,6 +373,7 @@ window.Fertirrigacao = (function () {
           <tr class="acum"><th>Acumulado</th>${fs.map(f => `<td>${cel(realOf(d, f, 'dia'), cotaD(f))}</td>`).join('')}<td class="tt">${cel(Rt, Mt)}</td></tr></tbody></table></div>
         <div class="fc-sec"><h4>Equipe e variáveis online por turno</h4>
           <table class="fc-mx fc-mx--v"><thead><tr><th></th><th>Aplic.</th><th>Caminh.</th><th>Produtivo</th><th>Manutenção</th><th>Ag. insumos</th><th>Ef. motor</th></tr></thead><tbody>${TU.map(sgT).join('')}</tbody></table></div>
+        ${abastSec(d, 'dia', fs)}
         <div class="fc-sec"><h4>Ofensores</h4><table class="fc-mx fc-mx--of"><thead><tr><th></th>${TU.map(t => `<th>Turno ${t}</th>`).join('')}</tr></thead><tbody>${ofs}</tbody></table></div>`;
     } else {
       const linhas = fs.map(f => { const m = metaOf(d, f, T), r = realOf(d, f, T); return { f, r, m: m ? m.v : null, sg: IX.sg[d + '|' + f + '|' + T] }; });
@@ -345,6 +387,7 @@ window.Fertirrigacao = (function () {
           ${linhas.map((l, i) => { const q = l.m ? l.r / l.m : null, s = l.sg; return `<div class="fc-fr"><div class="nm">${nomeF(l.f)}<small>${esc((PN[l.f] || {}).fazenda || '')}</small></div><div class="fc-trk"><i style="--w:${l.r / mx * 100}%;--i:${i};background:${COR[st(q)]}"></i>${l.m ? `<span class="mt" style="left:calc(${l.m / mx * 100}% - 1px)"></span>` : ''}</div><div class="vl"><b>${nf(l.r, 1)}</b>/${nf(l.m, 1)}</div>${pill(q)}<div class="fc-det">${s && s.vel != null ? `<span>${nf(s.vel, 1)} km/h</span>` : ''}${s && s.pil != null ? `<span>piloto ${pc(s.pil)}</span>` : ''}${s && s.ofTxt ? `<span class="of">${esc(s.ofTxt)}</span>` : ''}</div></div>`; }).join('')}
         </div>
         <div class="fc-sec"><h4>Variáveis online</h4><div class="fc-vars">${vv('prod')}${vv('manut')}${vv('ins')}${vv('motor')}</div></div>
+        ${abastSec(d, T, fs)}
         <div class="fc-sec"><h4>Acumulado do dia${ate.length > 1 ? ' · turnos ' + ate.join(' + ') : ''}</h4>
           <table class="fc-mx"><thead><tr>${fs.map(f => `<th>${nomeF(f)}</th>`).join('')}<th>Total</th></tr></thead><tbody><tr>${fs.map(f => `<td>${cel(sum(ate.map(t => realOf(d, f, t))), cotaD(f))}</td>`).join('')}<td class="tt">${cel(acR, acM)}</td></tr></tbody></table>
         </div>`;
@@ -558,7 +601,14 @@ window.Fertirrigacao = (function () {
     pResumo(); pFrentes(); pCota(); pFech(); pProd(); pVar();
     if (document.fonts && document.fonts.ready) document.fonts.ready.then(() => { S.fbP.sync(true); S.fbV.sync(true); mover($('#fechTurno'), $(`#fechTurno button[data-t="${S.fechT}"]`), true); mover($('#evoModo'), $(`#evoModo button[data-m="${S.evo}"]`), true); });
   }
+  async function carregarAbast() {
+    if (window.__ABAST_DADOS__) { AB = window.__ABAST_DADOS__; return; }
+    try { const r = await fetch('abastecimentos.json', { cache: 'no-store' }); if (r.ok) AB = (await Acesso.readJson(await r.json())).data; } catch (e) { /* ainda não publicado */ }
+  }
+  /** Recebe os abastecimentos logo após a sincronização. */
+  function definirAbast(dados) { AB = dados; if (D && S) pFech(); }
   async function iniciar(dados) {
+    await carregarAbast();
     if (dados) { D = dados; montar(); return; }
     try {
       const r = await fetch(ARQ, { cache: 'no-store' }); if (!r.ok) throw new Error('sem arquivo');
@@ -570,7 +620,7 @@ window.Fertirrigacao = (function () {
 
   /** Funções de formatação e gráficos compartilhadas com as outras páginas (ex.: Pulverização). */
   const util = { $, $$, nf, nfs, pc, esc, dBR, dBRa, addD, rangeD, semana, sum, avg, porNum, arred100, mix, cascata, animar, contar, toast, mover, W, passoBom, vazio, eixoY, pilula, barrasDia, grupos, linha, spark, kpi, COR, semMov };
-  return { iniciar, definir, VERSAO, ARQ, util, get dados() { return D; } };
+  return { iniciar, definir, definirAbast, VERSAO, ARQ, util, get dados() { return D; }, get abast() { return AB; } };
 })();
 
 /* ---------- inicialização (login → layout → página) ---------- */
