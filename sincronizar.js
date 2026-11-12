@@ -63,11 +63,33 @@ window.Sincronizar = (function () {
       try {
         if (h.kind === 'file' && !nome.startsWith('~$')) {
           const t = TIPOS.find(t => t.rx.test(nome));
-          if (t) { const f = await h.getFile(); const at = achados[t.tipo]; if (!at || f.lastModified > at.f.lastModified) achados[t.tipo] = { f, pasta }; }
+          if (t) { const f = await h.getFile(); (achados.cands = achados.cands || {}); (achados.cands[t.tipo] = achados.cands[t.tipo] || []).push({ f, pasta }); }
         } else if (h.kind === 'directory' && nivel < 1) await varrer(h, nivel + 1, achados, pasta);
       } catch (e) { log(`<b>${esc(nome)}</b> (${esc(pasta)}): sem acesso ou aberto em outro programa — pulei.`, 'bad'); }
     }
   }
+
+  /* Vários arquivos podem ter nome parecido (cópias, "Acompanhamento …" de outra área, "(1).xlsx" baixado).
+     Para cada tipo, fica o arquivo mais recente que tem as ABAS certas; os outros são ignorados. */
+  const ABAS = {
+    fert: n => n.some(x => /^painel$/i.test(x.trim())) && n.some(x => /produ[cç][aã]o\s*turno/i.test(x)),
+    pulv: n => n.some(x => /ioa\s*pulve/i.test(x)) && n.some(x => /^tabelas$/i.test(x.trim())),
+    avi: n => n.some(x => /trabalho/i.test(x)),
+    abast: () => true, usuarios: () => true,
+  };
+  async function escolher(achados) {
+    const C = achados.cands || {}; let X = null;
+    for (const t of TIPOS) {
+      const l = (C[t.tipo] || []).sort((a, b) => b.f.lastModified - a.f.lastModified);
+      if (!l.length) continue;
+      if (l.length === 1 && ABAS[t.tipo] === ABAS.abast) { achados[t.tipo] = l[0]; continue; }
+      for (const c of l) {
+        try { X = X || await carregaXlsx(); const nomes = X.read(await c.f.arrayBuffer(), { type: 'array', bookSheets: true }).SheetNames; if (ABAS[t.tipo](nomes)) { achados[t.tipo] = c; break; } log(`<b>${esc(c.f.name)}</b> (${esc(c.pasta)}): não é a planilha de ${esc(t.nome)} (abas diferentes) — ignorei.`); }
+        catch (e) { log(`<b>${esc(c.f.name)}</b> (${esc(c.pasta)}): não consegui abrir — pulei.`, 'bad'); }
+      }
+    }
+  }
+  const semMudanca = (nome, f) => log(`${nome}: sem mudança — o arquivo <b>${esc(f.name)}</b> (salvo em ${new Date(f.lastModified).toLocaleString('pt-BR')}) é o mesmo já publicado. Alterou a planilha? Salve (Ctrl+S), espere o OneDrive sincronizar e tente de novo.`);
 
   /* ---------- GitHub (API) ---------- */
   const gh = async (c, metodo, rota, corpo) => {
@@ -212,8 +234,9 @@ window.Sincronizar = (function () {
       } else {
         log('Este navegador não abre pastas: escolha as planilhas que você tem (pode marcar várias).');
         const fs = await new Promise(ok => { const i = document.createElement('input'); i.type = 'file'; i.multiple = true; i.accept = '.xlsm,.xlsx,.xls'; i.onchange = () => ok([...i.files]); i.click(); });
-        fs.forEach(f => { const t = TIPOS.find(t => t.rx.test(f.name)); if (t) achados[t.tipo] = { f, pasta: 'arquivo escolhido' }; else log(`<b>${esc(f.name)}</b>: não reconheci essa planilha pelo nome.`, 'bad'); });
+        fs.forEach(f => { const t = TIPOS.find(t => t.rx.test(f.name)); if (t) { (achados.cands = achados.cands || {}); (achados.cands[t.tipo] = achados.cands[t.tipo] || []).push({ f, pasta: 'arquivo escolhido' }); } else log(`<b>${esc(f.name)}</b>: não reconheci essa planilha pelo nome.`, 'bad'); });
       }
+      await escolher(achados);
       const vistas = TIPOS.filter(t => achados[t.tipo] && !(t.tipo === 'usuarios' && window.Layout && !Layout.admin()));
       vistas.forEach(t => { const a = achados[t.tipo]; log(`${t.nome}: <b>${esc(a.f.name)}</b> (${esc(a.pasta)}) · salva em ${new Date(a.f.lastModified).toLocaleString('pt-BR')}`); });
       const fora = TIPOS.filter(t => !achados[t.tipo] && !(t.tipo === 'usuarios' && window.Layout && !Layout.admin()));
@@ -231,7 +254,7 @@ window.Sincronizar = (function () {
         let anterior = null;
         if (c && c.token) { try { const b = await lerRepoBruto(c, ARQ); anterior = b ? (await Acesso.readJson(b)).data : null; } catch (e) { if (/token/.test(e.message)) throw e; } }
         if (!anterior) anterior = Fertirrigacao.dados || await (async () => { const b = await lerSite(ARQ); return b ? (await Acesso.readJson(b)).data : null; })();
-        if (anterior && anterior.fonteSig === sig) log('Fertirrigação: sem mudança desde a última publicação.');
+        if (anterior && anterior.fonteSig === sig) semMudanca('Fertirrigação', f);
         else {
           log('Lendo a planilha de fertirrigação…');
           const X = await carregaXlsx();
@@ -247,7 +270,7 @@ window.Sincronizar = (function () {
         let anterior = null;
         if (c && c.token) { try { const b = await lerRepoBruto(c, AP); anterior = b ? (await Acesso.readJson(b)).data : null; } catch (e) { if (/token/.test(e.message)) throw e; } }
         if (!anterior) anterior = (window.Pulverizacao && Pulverizacao.dados) || await (async () => { const b = await lerSite(AP); return b ? (await Acesso.readJson(b)).data : null; })();
-        if (anterior && anterior.fonteSig === sig) log('Pulverização: sem mudança desde a última publicação.');
+        if (anterior && anterior.fonteSig === sig) semMudanca('Pulverização', f);
         else {
           log('Lendo a planilha dos pulverizadores…');
           const X = await carregaXlsx();
@@ -263,7 +286,7 @@ window.Sincronizar = (function () {
         let anterior = null;
         if (c && c.token) { try { const b = await lerRepoBruto(c, AA); anterior = b ? (await Acesso.readJson(b)).data : null; } catch (e) { if (/token/.test(e.message)) throw e; } }
         if (!anterior) anterior = (window.Aviacao && Aviacao.dados) || await (async () => { const b = await lerSite(AA); return b ? (await Acesso.readJson(b)).data : null; })();
-        if (anterior && anterior.fonteSig === sig) log('Aviação: sem mudança desde a última publicação.');
+        if (anterior && anterior.fonteSig === sig) semMudanca('Aviação', f);
         else {
           log('Lendo o relatório da TRAVICAR…');
           const X = await carregaXlsx();
@@ -280,7 +303,7 @@ window.Sincronizar = (function () {
         let anterior = null;
         if (c && c.token) { try { const b = await lerRepoBruto(c, AQ); anterior = b ? (await Acesso.readJson(b)).data : null; } catch (e) { if (/token/.test(e.message)) throw e; } }
         if (!anterior) anterior = Fertirrigacao.abast || await (async () => { const b = await lerSite(AQ); return b ? (await Acesso.readJson(b)).data : null; })();
-        if (anterior && anterior.fonteSig === sig) log('Abastecimentos: sem mudança desde a última publicação.');
+        if (anterior && anterior.fonteSig === sig) semMudanca('Abastecimentos', f);
         else {
           log('Lendo a planilha de abastecimentos…');
           const X = await carregaXlsx();
