@@ -213,7 +213,7 @@ window.Preparo = (function () {
     try {
       const r = await fetch(ARQ, { cache: 'no-store' }); if (!r.ok) throw new Error('sem arquivo');
       D = (await Acesso.readJson(await r.json())).data; montar();
-    } catch (e) { const el = $('#ppKpis'); if (el) el.innerHTML = '<div class="ft-vazio" style="grid-column:1/-1">Ainda não há dados do preparo de solo publicados. Use “Sincronizar” com a planilha Informativo Operacional Agrícola na pasta.</div>'; }
+    } catch (e) { const el = $('#ppKpis'); if (el) el.innerHTML = '<div class="ft-vazio" style="grid-column:1/-1">Ainda não há dados do PPT publicados. Use “Sincronizar” com a planilha Informativo Operacional Agrícola na pasta.</div>'; }
   }
   function aoEntrar() { if (!D || !montado) return; tudo(); pInfo(); requestAnimationFrame(() => S.sync(true)); }
   function definir(dados) { D = dados; S = null; montar(); }
