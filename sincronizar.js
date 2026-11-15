@@ -28,6 +28,7 @@ window.Sincronizar = (function () {
     { tipo: 'pulv', rx: /pulveriza.*\.xls[xm]$/i, nome: 'Pulverização' },
     { tipo: 'avi', rx: /(ciclo.*opera|travicar).*\.xls[xm]?$/i, nome: 'Aviação (TRAVICAR)' },
     { tipo: 'abast', rx: /abastec.*\.xls[xm]?$/i, nome: 'Abastecimentos (fertirrigação)' },
+    { tipo: 'prep', rx: /informativo.*opera.*\.xls[xm]?$/i, nome: 'Preparo de Solo (Informativo Operacional)' },
     { tipo: 'usuarios', rx: /usu[aá]rio.*\.xls[xm]$/i, nome: 'Usuários' },
   ];
 
@@ -75,6 +76,7 @@ window.Sincronizar = (function () {
     fert: n => n.some(x => /^painel$/i.test(x.trim())) && n.some(x => /produ[cç][aã]o\s*turno/i.test(x)),
     pulv: n => n.some(x => /ioa\s*pulve/i.test(x)) && n.some(x => /^tabelas$/i.test(x.trim())),
     avi: n => n.some(x => /trabalho/i.test(x)),
+    prep: n => n.some(x => /^form1$/i.test(x.trim())),
     abast: () => true, usuarios: () => true,
   };
   async function escolher(achados) {
@@ -178,7 +180,7 @@ window.Sincronizar = (function () {
   async function pastas() {
     if (!SUPORTA) { modal(`<h3>Pastas</h3><p>Para ler pastas do computador, abra o painel no <b>Google Chrome</b> ou no <b>Microsoft Edge</b> (no computador).</p><div class="ft-modal__acts"><button class="ft-btn" data-fechar>Fechar</button></div>`); return; }
     const l = await lerPastas(), perms = await Promise.all(l.map(temPerm));
-    const m = modal(`<h3><i class="fa-regular fa-folder-open"></i> Pastas sincronizadas</h3><p>O painel procura nestas pastas (e numa subpasta abaixo) as planilhas <b>Acompanhamento 2026</b>, <b>Pulverizadores</b>, o relatório da <b>TRAVICAR</b> (relatorio-ciclo-operacao), <b>Abastecimentos</b> e <b>Usuários site gerencial</b>. Se o mesmo arquivo estiver em duas pastas, vale o salvo por último.</p>
+    const m = modal(`<h3><i class="fa-regular fa-folder-open"></i> Pastas sincronizadas</h3><p>O painel procura nestas pastas (e numa subpasta abaixo) as planilhas <b>Acompanhamento 2026</b>, <b>Pulverizadores</b>, o relatório da <b>TRAVICAR</b> (relatorio-ciclo-operacao), <b>Abastecimentos</b>, <b>Informativo Operacional Agrícola</b> e <b>Usuários site gerencial</b>. Se o mesmo arquivo estiver em duas pastas, vale o salvo por último.</p>
       <div class="ft-pastas">${l.length ? l.map((h, i) => `<div class="ft-pasta"><i class="fa-solid fa-folder"></i><b>${esc(h.name)}</b>${perms[i] ? '<span class="ft-tag ok">liberada</span>' : `<button class="ft-btn" data-lib="${i}">Liberar</button>`}<button class="ft-btn" data-rem="${i}" aria-label="Remover ${esc(h.name)}"><i class="fa-solid fa-trash"></i></button></div>`).join('') : '<div class="ft-vazio">Nenhuma pasta vinculada.</div>'}</div>
       <div class="ft-modal__acts"><button class="ft-btn" data-fechar>Fechar</button><button class="ft-btn" id="pAdd"><i class="fa-solid fa-folder-plus"></i>Adicionar pasta</button><button class="ft-btn pri" id="pSync"><i class="fa-solid fa-rotate"></i>Sincronizar</button></div>`);
     m.querySelector('#pAdd').onclick = async () => { try { await adicionarPasta(); } catch (e) { /* cancelou */ } pastas(); };
@@ -314,6 +316,23 @@ window.Sincronizar = (function () {
           log(`Abastecimentos: ${novo.registros.filter(r => r.tipo === 'abast').length} abastecimentos e ${novo.registros.filter(r => r.tipo === 'carreg').length} carregamentos · ${dias.join(', ')} (turno C após 00h conta no dia em que começou).`, 'ok');
         }
       });
+      // preparo de solo (Informativo Operacional Agrícola · Forms)
+      if (achados.prep && window.PrepPlanilha) await etapa('Preparo de Solo', async () => {
+        const AR = 'preparo.json', f = achados.prep.f, sig = `${f.name}|${f.lastModified}|${PrepPlanilha.VERSAO}|${window.Preparo ? Preparo.VERSAO : 0}`;
+        let anterior = null;
+        if (c && c.token) { try { const b = await lerRepoBruto(c, AR); anterior = b ? (await Acesso.readJson(b)).data : null; } catch (e) { if (/token/.test(e.message)) throw e; } }
+        if (!anterior) anterior = (window.Preparo && Preparo.dados) || await (async () => { const b = await lerSite(AR); return b ? (await Acesso.readJson(b)).data : null; })();
+        if (anterior && anterior.fonteSig === sig) semMudanca('Preparo de Solo', f);
+        else {
+          log('Lendo o Informativo Operacional (preparo de solo)…');
+          const X = await carregaXlsx();
+          const novo = PrepPlanilha.ler(X, await f.arrayBuffer());
+          const final = PrepPlanilha.mesclar(anterior, novo); final.fonte = f.name; final.fonteSig = sig;
+          arquivos.push({ path: AR, content: JSON.stringify(await Acesso.encryptJson(final)), prep: final });
+          const cr = novo.correcoes || {}, ult = final.registros.length ? final.registros[final.registros.length - 1].d.split('-').reverse().join('/') : '—';
+          log(`Preparo de Solo: ${final.registros.length} apontamentos até ${ult}${cr.repetidos ? ` · ${cr.repetidos} repetido(s) unificado(s)` : ''}${final.conferir.length ? ` · ${final.conferir.length} para conferir` : ''}.`, 'ok');
+        }
+      });
       // usuários
       if (achados.usuarios && window.Layout && !Layout.admin()) log('Usuários: só o administrador do painel atualiza os acessos — planilha ignorada.');
       else if (achados.usuarios) await etapa('Usuários', async () => {
@@ -343,7 +362,8 @@ window.Sincronizar = (function () {
       const pz = arquivos.find(a => a.pulv); if (pz && window.Pulverizacao) Pulverizacao.definir(pz.pulv);
       const av = arquivos.find(a => a.avi); if (av && window.Aviacao) Aviacao.definir(av.avi);
       const ab = arquivos.find(a => a.abast); if (ab) Fertirrigacao.definirAbast(ab.abast);
-      if ((fert || pz || av) && window.Layout && Layout.animar) Layout.animar(document);
+      const pp = arquivos.find(a => a.prep); if (pp && window.Preparo) Preparo.definir(pp.prep);
+      if ((fert || pz || av || pp) && window.Layout && Layout.animar) Layout.animar(document);
     } catch (e) {
       if (e && e.name === 'AbortError') log('Sincronização cancelada.');
       else log('Não foi possível sincronizar: ' + esc(e.message || e), 'bad');
