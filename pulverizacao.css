@@ -207,3 +207,13 @@
   .os-det__g { grid-template-columns: minmax(0, 1fr); }
 }
 @media (prefers-reduced-motion: reduce) { .os-op, .os-id, .os-tr, .os-op__b i, .os-id__b i, .hb-op, .hb-fr, .hb-mix i { animation: none; } }
+
+/* lista de OS: filtro Abertas · Finalizadas · Todas no cabeçalho da lista */
+.os-lh { align-items: center; }
+.os-lh__d { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; justify-content: flex-end; }
+/* fila: uma linha por fazenda, operações empilhadas */
+.hb-it__op { display: flex; align-items: flex-start; gap: 6px; margin-top: 3px; font-size: 11.5px; color: var(--text); min-width: 0; }
+.hb-it__op .hb-chip { margin-top: 1px; }
+.hb-it__n { color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
+.hb-seq { font-size: 11px; }
+@media (max-width: 760px) { .os-lh { flex-wrap: wrap; } .os-lh__d { justify-content: flex-start; } }

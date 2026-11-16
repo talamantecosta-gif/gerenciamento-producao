@@ -314,19 +314,21 @@ window.Pulverizacao = (function () {
     $('#hbRod').innerHTML = `<b>${pc(o.r / o.tot)}</b> da área realizada · aderência <span class="ft-tag ${st}" title="realizado ÷ esperado até hoje">${pc(ad)}</span> · <b class="${dif < 0 ? 'neg' : 'pos'}">${nfs(dif, 0)} ha</b> contra o esperado${o.k === 'todas' ? '<small>soma das operações da matriz: o que tinha que ser feito até hoje × o que foi feito</small>' : ''}`;
     if (!soGrafico) { pFila(); pOS(); }
   }
-  /** Fila das próximas aplicações (aba Resumo): uma coluna por frente, na ordem da sequência. */
+  /** Fila das próximas aplicações (aba Resumo): uma coluna por frente com as próximas 4 fazendas, na ordem da sequência.
+      Operações em sequência na mesma fazenda viram uma linha só (chips de cada operação, área somada). */
+  const FILA_FAZ = 4;
   function pFila() {
     const { nf, esc, dBR, sum } = U, el = $('#hbFila'), F = H.fila || [];
     const fr = [...new Set(F.map(x => x.f))].sort((a, b) => a - b);
     if (!fr.length) { el.innerHTML = '<div class="ft-vazio">Sem aplicações na fila do Resumo.</div>'; return; }
-    const hm = s => s ? `${dBR(s.slice(0, 10))} ${s.slice(11, 16)}` : '—';
+    const hm = s => s ? `${dBR(s.slice(0, 10))} ${s.slice(11, 16)}` : '';
     el.innerHTML = fr.map((f, i) => {
-      const L = F.filter(x => x.f === f).sort((a, b) => (a.s ?? 0) - (b.s ?? 0) || String(a.ent).localeCompare(String(b.ent))), aberto = S.filaAberta === f, mostra = aberto ? L : L.slice(0, 5);
-      const ops = {}; L.forEach(x => ops[x.op] = (ops[x.op] || 0) + x.ha);
-      return `<article class="hb-fr" style="--i:${i}"><header><div><b>Frente ${esc(f)}</b><small>${esc(H.frentes[f] || '')}</small></div><div class="hb-fr__t"><b>${nf(sum(L.map(x => x.ha)), 1)} ha</b><small>${L.length} na fila${L[L.length - 1].sai ? ' · até ' + dBR(L[L.length - 1].sai.slice(0, 10)) : ''}</small></div></header>
-        <div class="hb-mix">${Object.entries(ops).sort((a, b) => b[1] - a[1]).map(([o, v]) => `<i style="--w:${v / sum(L.map(x => x.ha)) * 100}%;background:${OPCOR[o] || '#9AA59D'}" data-tip="${esc(`<b>${o}</b> · ${nf(v, 1)} ha`)}"></i>`).join('')}</div>
-        <ol>${mostra.map((x, j) => `<li style="--c:${OPCOR[x.op] || '#9AA59D'}"><span class="hb-seq">${nf(x.s, Number.isInteger(x.s) ? 0 : 1)}</span><div class="hb-it"><div class="hb-it__l1"><span class="hb-chip" title="${esc(x.nome)}">${esc(x.op)}</span><b title="${esc(x.faz)}">${esc(x.faz.replace(/^\d+-/, '').replace(/^Fazenda\s+/i, ''))}</b><span class="hb-ha">${nf(x.ha, 1)} ha</span></div><div class="hb-it__l2"><span>${esc(x.nome)}</span><span>${esc(x.faz.match(/^\d+/)?.[0] || '')}${x.tal ? ' · talhões ' + esc(x.tal) : ''}</span>${j === 0 ? '<span class="hb-ent">agora</span>' : x.ent ? `<span class="hb-ent">${hm(x.ent)}</span>` : ''}</div></div></li>`).join('')}</ol>
-        ${L.length > 5 ? `<button type="button" class="hb-mais" data-f="${esc(f)}">${aberto ? 'Mostrar menos' : `Ver todas (+${L.length - 5})`}</button>` : ''}</article>`;
+      const L = F.filter(x => x.f === f).sort((a, b) => (a.s ?? 0) - (b.s ?? 0) || String(a.ent).localeCompare(String(b.ent)));
+      const G = []; for (const x of L) { const g = G[G.length - 1]; if (g && g.faz === x.faz) g.itens.push(x); else if (G.length < FILA_FAZ) G.push({ faz: x.faz, itens: [x] }); else break; }
+      const ops = {}; L.forEach(x => ops[x.op] = (ops[x.op] || 0) + x.ha); const tot = sum(L.map(x => x.ha)), nFaz = new Set(L.map(x => x.faz)).size;
+      return `<article class="hb-fr" style="--i:${i}"><header><div><b>Frente ${esc(f)}</b><small>${esc(H.frentes[f] || '')}</small></div><div class="hb-fr__t"><b>${nf(tot, 1)} ha</b><small>${nFaz} fazenda${nFaz > 1 ? 's' : ''} na fila${L[L.length - 1].sai ? ' · até ' + dBR(L[L.length - 1].sai.slice(0, 10)) : ''}</small></div></header>
+        <div class="hb-mix">${Object.entries(ops).sort((a, b) => b[1] - a[1]).map(([o, v]) => `<i style="--w:${v / tot * 100}%;background:${OPCOR[o] || '#9AA59D'}" data-tip="${esc(`<b>${o}</b> · ${nf(v, 1)} ha`)}"></i>`).join('')}</div>
+        <ol>${G.map((g, j) => { const x0 = g.itens[0]; return `<li style="--c:${OPCOR[x0.op] || '#9AA59D'}"><span class="hb-seq">${j + 1}º</span><div class="hb-it"><div class="hb-it__l1"><b title="${esc(g.faz)}">${esc(g.faz.replace(/^\d+-/, '').replace(/^Fazenda\s+/i, ''))}</b><span class="hb-ha">${nf(sum(g.itens.map(x => x.ha)), 1)} ha</span></div>${g.itens.map(x => `<div class="hb-it__op"><span class="hb-chip" style="--c:${OPCOR[x.op] || '#9AA59D'}" title="${esc(x.nome)}">${esc(x.op)}</span><span class="hb-it__n" title="${esc(x.nome + (x.tal ? ' · talhões ' + x.tal : ''))}">${esc(x.nome)}${x.tal ? ` · talhões ${esc(x.tal)}` : ''}</span></div>`).join('')}<div class="hb-it__l2"><span>${esc(g.faz.match(/^\d+/)?.[0] || '')}</span>${j === 0 ? '<span class="hb-ent">agora</span>' : x0.ent ? `<span class="hb-ent">entrada ${hm(x0.ent)}</span>` : ''}</div></div></li>`; }).join('')}</ol></article>`;
     }).join('');
     U.cascata(el);
   }
@@ -366,9 +368,9 @@ window.Pulverizacao = (function () {
     const mx = Math.max(1, ...ops.map(o => o.area));
     $('#osOps').innerHTML = ops.map((o, i) => `<button type="button" class="os-op${S.osOp === o.op ? ' is-on' : ''}" data-op="${esc(o.op)}" style="--i:${i};--c:${OPCOR[o.op] || '#9AA59D'}"><span class="hb-chip">${esc(o.op)}</span><span class="os-op__n">${esc(o.nome)}<small>${o.n} OS</small></span><span class="os-op__b"><i style="--w:${o.area / mx * 100}%"><em style="--w:${o.area ? o.real / o.area * 100 : 0}%"></em></i></span><b>${nf(o.area, 0)} ha</b><small class="os-op__p">${pc(o.area ? o.real / o.area : 0)} apont.</small></button>`).join('') || '<div class="ft-vazio">Nenhuma OS aberta.</div>';
     // idade das abertas
-    const fx = [['até 15 dias', o => o.idade <= 15, 'ok'], ['16 a 30', o => o.idade > 15 && o.idade <= 30, 'warn'], ['31 a 60', o => o.idade > 30 && o.idade <= 60, 'bad'], ['mais de 60', o => o.idade > 60, 'bad']];
+    const fx = [['até 15 dias', o => o.idade <= 15, 'ok'], ['16 a 30 dias', o => o.idade > 15 && o.idade <= 30, 'warn'], ['31 a 60 dias', o => o.idade > 30 && o.idade <= 60, 'bad'], ['mais de 60 dias', o => o.idade > 60, 'bad']];
     const fv = fx.map(([n, f, c]) => { const L = A.filter(f); return { n, c, q: L.length, ha: sum(L.map(o => o.area)) }; }), fm = Math.max(1, ...fv.map(x => x.q));
-    $('#osIdade').innerHTML = fv.map((x, i) => `<div class="os-id ${x.c}${x.n === 'mais de 60' ? ' is-max' : ''}" style="--i:${i}"><b>${x.q}</b><div class="os-id__b"><i style="--h:${x.q / fm * 100}%"></i></div><span>${x.n}</span><small>${nf(x.ha, 0)} ha</small></div>`).join('');
+    $('#osIdade').innerHTML = fv.map((x, i) => `<div class="os-id ${x.c}${x.n === 'mais de 60 dias' ? ' is-max' : ''}" style="--i:${i}"><b>${x.q}</b><div class="os-id__b"><i style="--h:${x.q / fm * 100}%"></i></div><span>${x.n}</span><small>${nf(x.ha, 0)} ha</small></div>`).join('');
     // tabela
     const vis = S.osVer === 'todas' ? T : S.osVer === 'fin' ? T.filter(o => !o.aberta) : A;
     const L = vis.filter(o => !S.osOp || o.op === S.osOp).sort((a, b) => S.osVer === 'abertas' ? b.peso - a.peso || b.idade - a.idade : String(b.em).localeCompare(String(a.em)));
@@ -386,7 +388,6 @@ window.Pulverizacao = (function () {
     $('#osVer').onclick = e => { const b = e.target.closest('button'); if (b) { S.osVer = b.dataset.v; S.osMais = false; pOS(); } };
     $('#osOps').onclick = e => { const b = e.target.closest('.os-op'); if (b) { S.osOp = S.osOp === b.dataset.op ? null : b.dataset.op; pOS(); } };
     $('#osTab').onclick = e => { if (e.target.closest('[data-osmais]')) { S.osMais = true; pOS(); return; } const r = e.target.closest('tr.os-tr'); if (r) { S.osAb = S.osAb === r.dataset.os ? null : r.dataset.os; pOS(); } };
-    $('#hbFila').onclick = e => { const b = e.target.closest('.hb-mais'); if (b) { S.filaAberta = S.filaAberta === b.dataset.f ? null : b.dataset.f; pFila(); } };
     $('#pzBaixar').onclick = async () => { const c = await imagem(); if (!c) return; const a = document.createElement('a'); a.href = c.toDataURL('image/png'); const R = regAtual(); a.download = `status-pulverizacao-${R.data}${R.turno ? '-' + R.turno.replace(/\W+/g, '') : ''}.png`; a.click(); U.toast('Imagem baixada.'); };
     $('#pzCopiar').onclick = async () => { try { const c = await imagem(); if (!c) return; const blob = await new Promise(r => c.toBlob(r, 'image/png')); await navigator.clipboard.write([new ClipboardItem({ 'image/png': blob })]); U.toast('Imagem copiada — é só colar no grupo.'); } catch (e) { U.toast('Não foi possível copiar. Use “Baixar imagem”.'); } };
     $$('.pz-reg').forEach(n => {
@@ -403,7 +404,7 @@ window.Pulverizacao = (function () {
     const tP = TURNOS.filter(t => D.producao.some(p => p.t === t)), tQ = TURNOS.filter(t => D.qualidade.some(q => q.turno === t));
     const padP = () => ({ de: dP[0], ate: dP[dP.length - 1], t: 'todos', eq: 'todos' });
     const padQ = () => ({ de: U.addD(dQ[dQ.length - 1], -29), ate: dQ[dQ.length - 1], t: 'todos', eq: 'todos' });
-    if (!S) S = { p: padP(), q: padQ(), hbOp: 'todas', filaAberta: null, osVer: 'abertas', osOp: null, osAb: null, osMais: false };
+    if (!S) S = { p: padP(), q: padQ(), hbOp: 'todas', osVer: 'abertas', osOp: null, osAb: null, osMais: false };
     S.fbP = filtro($('#pzFbProd'), S.p, { turnos: tP, frotas: eqP, min: dP[0], max: dP[dP.length - 1], padrao: padP, cb: pProd });
     S.fbQ = filtro($('#pzFbQual'), S.q, { turnos: tQ, frotas: eqQ, min: dQ[0], max: dQ[dQ.length - 1], padrao: padQ, cb: pQual });
     ligar();
