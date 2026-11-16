@@ -9,6 +9,8 @@
          (correções da planilha refeitas a cada sincronização);
        - "relatorio-ciclo-operacao.xlsx" (TRAVICAR, aplicação aérea) → aviacao.json
          (trabalhos acumulados: o histórico fica mesmo que saia do período exportado);
+       - "FO.SA.23 - Matriz de Herbicida" → herbicida.json (esperado × realizado das
+         operações 2007/2242, fila por frente e ordens de serviço, na página Pulverização);
        - "Usuários site gerencial.xlsx" (nome com Usuário) → acesso.json
          (mesma regra do painel-agricola: inativo sai, senha < 8 mantém como
          estava, o usuário logado nunca é removido).
@@ -29,6 +31,7 @@ window.Sincronizar = (function () {
     { tipo: 'avi', rx: /(ciclo.*opera|travicar).*\.xls[xm]?$/i, nome: 'Aviação (TRAVICAR)' },
     { tipo: 'abast', rx: /abastec.*\.xls[xm]?$/i, nome: 'Abastecimentos (fertirrigação)' },
     { tipo: 'prep', rx: /informativo.*opera.*\.xls[xm]?$/i, nome: 'Preparo de Solo (Informativo Operacional)' },
+    { tipo: 'herb', rx: /(matriz.*herbicida|fo\.?\s*sa\.?\s*23).*\.xls[xmb]?$/i, nome: 'Matriz de Herbicida' },
     { tipo: 'usuarios', rx: /usu[aá]rio.*\.xls[xm]$/i, nome: 'Usuários' },
   ];
 
@@ -77,6 +80,7 @@ window.Sincronizar = (function () {
     pulv: n => n.some(x => /ioa\s*pulve/i.test(x)) && n.some(x => /^tabelas$/i.test(x.trim())),
     avi: n => n.some(x => /trabalho/i.test(x)),
     prep: n => n.some(x => /^form1$/i.test(x.trim())),
+    herb: n => n.some(x => /^i\s*-\s*locais de produ/i.test(x.trim())) && n.some(x => /^resumo$/i.test(x.trim())),
     abast: () => true, usuarios: () => true,
   };
   async function escolher(achados) {
@@ -279,7 +283,7 @@ window.Sincronizar = (function () {
           const novo = PulvPlanilha.ler(X, await f.arrayBuffer());
           const final = PulvPlanilha.mesclar(anterior, novo); final.fonte = f.name; final.fonteSig = sig;
           arquivos.push({ path: AP, content: JSON.stringify(await Acesso.encryptJson(final)), pulv: final });
-          log(`Pulverização: status de ${String(final.status.data || '').split('-').reverse().join('/')} · ${final.producao.length} apontamentos de produção · ${final.os.length} OS.`, 'ok');
+          log(`Pulverização: status de ${String(final.status.data || '').split('-').reverse().join('/')} · ${final.producao.length} apontamentos de produção.`, 'ok');
         }
       });
       // aviação (TRAVICAR)
@@ -333,6 +337,23 @@ window.Sincronizar = (function () {
           log(`Preparo de Solo: ${final.registros.length} apontamentos até ${ult}${cr.repetidos ? ` · ${cr.repetidos} repetido(s) unificado(s)` : ''}${final.conferir.length ? ` · ${final.conferir.length} para conferir` : ''}.`, 'ok');
         }
       });
+      // matriz de herbicida (FO.SA.23) → planejamento de herbicidas e OS na página Pulverização
+      if (achados.herb && window.HerbPlanilha) await etapa('Matriz de Herbicida', async () => {
+        const AH = 'herbicida.json', f = achados.herb.f, sig = `${f.name}|${f.lastModified}|${HerbPlanilha.VERSAO}|${window.Pulverizacao ? Pulverizacao.VERSAO : 0}`;
+        let anterior = null;
+        if (c && c.token) { try { const b = await lerRepoBruto(c, AH); anterior = b ? (await Acesso.readJson(b)).data : null; } catch (e) { if (/token/.test(e.message)) throw e; } }
+        if (!anterior) anterior = (window.Pulverizacao && Pulverizacao.herb) || await (async () => { const b = await lerSite(AH); return b ? (await Acesso.readJson(b)).data : null; })();
+        if (anterior && anterior.fonteSig === sig) semMudanca('Matriz de Herbicida', f);
+        else {
+          log('Lendo a Matriz de Herbicida (pode levar alguns segundos)…');
+          const X = await carregaXlsx();
+          const novo = HerbPlanilha.ler(X, await f.arrayBuffer());
+          const final = HerbPlanilha.mesclar(anterior, novo); final.fonte = f.name; final.fonteSig = sig;
+          arquivos.push({ path: AH, content: JSON.stringify(await Acesso.encryptJson(final)), herb: final });
+          const o7 = final.ops['2007'], ab = (final.os || []).filter(o => o.sit === 'A').length;
+          log(`Matriz de Herbicida: ${o7 ? `2007 com ${Math.round(o7.r).toLocaleString('pt-BR')} de ${Math.round(o7.tot).toLocaleString('pt-BR')} ha realizados · ` : ''}${final.fila.length} aplicações na fila · ${ab} OS abertas de ${(final.os || []).length}.`, 'ok');
+        }
+      });
       // usuários
       if (achados.usuarios && window.Layout && !Layout.admin()) log('Usuários: só o administrador do painel atualiza os acessos — planilha ignorada.');
       else if (achados.usuarios) await etapa('Usuários', async () => {
@@ -363,7 +384,8 @@ window.Sincronizar = (function () {
       const av = arquivos.find(a => a.avi); if (av && window.Aviacao) Aviacao.definir(av.avi);
       const ab = arquivos.find(a => a.abast); if (ab) Fertirrigacao.definirAbast(ab.abast);
       const pp = arquivos.find(a => a.prep); if (pp && window.Preparo) Preparo.definir(pp.prep);
-      if ((fert || pz || av || pp) && window.Layout && Layout.animar) Layout.animar(document);
+      const hb = arquivos.find(a => a.herb); if (hb && window.Pulverizacao) Pulverizacao.definirHerb(hb.herb);
+      if ((fert || pz || av || pp || hb) && window.Layout && Layout.animar) Layout.animar(document);
     } catch (e) {
       if (e && e.name === 'AbortError') log('Sincronização cancelada.');
       else log('Não foi possível sincronizar: ' + esc(e.message || e), 'bad');

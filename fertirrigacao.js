@@ -632,7 +632,7 @@ window.Fertirrigacao = (function () {
     if (window.Layout) { Layout.definirUsuario(user); Layout.iniciar(); }
     if (sair) sair.title = `Sair (${user})`;
     Fertirrigacao.iniciar(window.__FERT_DADOS__);
-    if (window.Pulverizacao) Pulverizacao.iniciar(window.__PULV_DADOS__);
+    if (window.Pulverizacao) Pulverizacao.iniciar(window.__PULV_DADOS__, window.__HERB_DADOS__);
     if (window.Aviacao) Aviacao.iniciar(window.__AVI_DADOS__);
     if (window.Preparo) Preparo.iniciar(window.__PREP_DADOS__);
   });

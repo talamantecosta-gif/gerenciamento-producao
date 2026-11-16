@@ -3,20 +3,22 @@
    Fonte: planilha "Pulverizadores.xlsx" → pulverizacao.json (criptografado)
    Seções: Resumo · Status da frota (+ imagem para o grupo) · Caminhões ·
    Produção (IOA PULVE, meta 150 ha/dia por pulverizador) · Qualidade da
-   aplicação · Ordens de serviço.
+   aplicação · Planejamento de herbicidas (herbicida.json, Matriz FO.SA.23:
+   esperado × realizado das operações 2007 e 2242, fila das próximas aplicações e
+   ordens de serviço com o apontado de cada uma).
    window.Pulverizacao = { iniciar(), definir(dados), aoEntrar(), VERSAO }
    ========================================================================= */
 window.Pulverizacao = (function () {
   'use strict';
-  const VERSAO = 1;
-  const ARQ = 'pulverizacao.json';
+  const VERSAO = 2;
+  const ARQ = 'pulverizacao.json', ARQ_HERB = 'herbicida.json';
   const ORDEM_FRENTES = ['PULVERIZADOR', 'HERBICAT', 'CALDA PRONTA', 'CORTE DE SOQUEIRA', 'AVIAÇÃO', 'BASE'];
   const ST_COR = { 'Rodando': 'ok', 'Parado': 'warn', 'Falta operador': 'warn', 'Manutenção': 'bad', 'Sem status': 'nd' };
   const CCOR = { CI: '#2E7D32', PE: '#E0A100', SD: '#C62828' };
   const CNOME = { CI: 'Condição ideal', PE: 'Perda de eficiência', SD: 'Muito desfavorável' };
   const TURNOS = ['A', 'B', 'C', 'ADM'];
 
-  let D = null, U = null, S = null, ligado = false, montado = false;
+  let D = null, H = null, U = null, S = null, ligado = false, montado = false;
   const $ = s => document.querySelector(s), $$ = (s, el = document) => [...el.querySelectorAll(s)];
 
   /* ---------- filtro genérico (período · turno · frota) ---------- */
@@ -230,47 +232,157 @@ window.Pulverizacao = (function () {
     $('#pzQualLeit').innerHTML = `<div class="tt"><i class="fa-solid fa-wand-magic-sparkles"></i>Leitura automática</div>${tx}`;
   }
 
-  /* =================== ORDENS DE SERVIÇO =================== */
-  function pOS() {
-    const { nf, pc, esc, dBR, sum, kpi, cascata, animar } = U;
-    const P = D.parametros, hoje = D.status.data || new Date().toISOString().slice(0, 10);
-    const dd = (a, b) => Math.round((new Date(b + 'T12:00:00Z') - new Date(a + 'T12:00:00Z')) / 864e5);
-    const L = D.os.map(o => {
-      const falt = Math.max(0, o.area - o.real), idade = o.abertura && o.status !== 'Concluída' ? dd(o.abertura, hoje) : null, al = [];
-      if (o.real > o.area * (1 + P.tolArea)) al.push('Verificar área realizada');
-      if (idade != null && idade > P.idadeMax) al.push(`Em aberto há ${idade} dias`);
-      if (!o.op) al.push('Sem operação');
-      if (o.status !== 'Concluída' && !o.mapa) al.push('Mapa não enviado');
-      return { ...o, falt, idade, al, prev: o.status === 'Concluída' ? null : falt / P.metaHaDia };
+  /* =================== PLANEJAMENTO DE HERBICIDAS (Matriz FO.SA.23) =================== */
+  const OPCOR = { '2007': '#1F4D2B', '2242': '#3C7A35', '2260': '#2B7A78', '2111': '#B07A00', '2075': '#2a6fb0', '2175': '#7A4FB0', '2201': '#5E9A57', '2136': '#8A5A2B' };
+  const hojeH = () => (H.gerado || new Date().toISOString()).slice(0, 10);
+  const acum = (mapa, ate) => Object.entries(mapa || {}).reduce((a, [d, v]) => a + (d <= ate ? v : 0), 0);
+  function situacao(o) {
+    const h = hojeH(), esp = acum(o.esp, h), ad = esp ? o.r / esp : null;
+    const r28 = acum(o.real, h) - acum(o.real, U.addD(h, -28)), ritmo = r28 / 28, falta = Math.max(0, o.tot - o.r);
+    const prev = falta <= 0 ? h : ritmo > 0 ? U.addD(h, Math.ceil(falta / ritmo)) : null;
+    const fimPlano = Object.keys(o.esp || {}).sort().pop() || null;
+    return { h, esp, ad, ritmo, falta, prev, fimPlano };
+  }
+  /** Curva acumulada: esperado (data planejada) × realizado (data do apontamento), linha da área total, hoje e projeção. */
+  function curvaS(el, o, x) {
+    const { nf, pc, esc, dBR, dBRa, addD, rangeD, W, pilula } = U;
+    const ds = [...Object.keys(o.esp), ...Object.keys(o.real)].sort(); if (!ds.length) { U.vazio(el); return; }
+    const ini = addD(ds[0], -3), fimDados = [ds[ds.length - 1], x.h].sort().pop();
+    const fim = x.prev && x.prev > fimDados && x.prev <= addD(fimDados, 150) ? x.prev : fimDados;
+    const dias = rangeD(ini, fim), w = W(el), Hh = 270, pl = 52, pr = 92, pt = 18, pb = 28, n = dias.length;
+    const mx = o.tot * 1.1, X = i => pl + i * (w - pl - pr) / Math.max(1, n - 1), Y = v => pt + (Hh - pt - pb) * (1 - v / mx), iD = d => dias.indexOf(d);
+    let e = 0, r = 0; const E = [], R = [];
+    dias.forEach(d => { e += o.esp[d] || 0; r += o.real[d] || 0; E.push(e); R.push(d <= x.h ? r : null); });
+    let s = `<svg viewBox="0 0 ${w} ${Hh}" width="${w}" height="${Hh}" role="img"><defs><linearGradient id="hbG${o.k}" x1="0" x2="0" y1="0" y2="1"><stop offset="0" stop-color="${OPCOR[o.k]}" stop-opacity=".22"/><stop offset="1" stop-color="${OPCOR[o.k]}" stop-opacity="0"/></linearGradient></defs>` + U.eixoY(mx / 1.1, Y, pl, w - pr, v => nf(v, 0));
+    // meses no eixo X
+    const pM = Math.max(1, Math.ceil(34 / ((w - pl - pr) / n * 30.4))); let iM = 0;
+    dias.forEach((d, i) => { if (d.slice(8) === '01' && iM++ % pM === 0) s += `<line x1="${X(i)}" x2="${X(i)}" y1="${Hh - pb}" y2="${Hh - pb + 4}" stroke="#C9D0C5"/><text x="${X(i) + 3}" y="${Hh - 8}" style="font-size:10.5px">${['jan', 'fev', 'mar', 'abr', 'mai', 'jun', 'jul', 'ago', 'set', 'out', 'nov', 'dez'][+d.slice(5, 7) - 1]}${d.slice(5, 7) === '01' ? '/' + d.slice(2, 4) : ''}</text>`; });
+    const ih = Math.min(n - 1, Math.max(0, iD(x.h)));
+    // atraso: área entre as curvas até hoje
+    const atraso = []; for (let i = 0; i <= ih; i++) atraso.push([X(i), Y(E[i]), Y(R[i])]);
+    if (atraso.length > 1) s += `<path class="fade" d="M${atraso.map(p => p[0].toFixed(1) + ' ' + p[1].toFixed(1)).join(' L')} L${atraso.slice().reverse().map(p => p[0].toFixed(1) + ' ' + p[2].toFixed(1)).join(' L')} Z" fill="#C62828" opacity=".07"/>`;
+    // área total
+    s += `<line class="fade" x1="${pl}" x2="${w - pr + 4}" y1="${Y(o.tot)}" y2="${Y(o.tot)}" stroke="#18301F" stroke-width="1.4" stroke-dasharray="2 3"/>` + pilula(w - pr + 6, Y(o.tot), pr - 8, 'total ' + nf(o.tot, 0));
+    // realizado (área + linha)
+    const pR = R.map((v, i) => v == null ? null : [X(i), Y(v)]).filter(Boolean), path = L => L.map((p, i) => (i ? 'L' : 'M') + p[0].toFixed(1) + ' ' + p[1].toFixed(1)).join('');
+    const len = L => L.reduce((a, p, i) => i ? a + Math.hypot(p[0] - L[i - 1][0], p[1] - L[i - 1][1]) : 0, 0);
+    s += `<path class="fade" d="${path(pR)} L${pR[pR.length - 1][0].toFixed(1)} ${Y(0)} L${pR[0][0].toFixed(1)} ${Y(0)} Z" fill="url(#hbG${o.k})"/>`;
+    const pE = E.map((v, i) => [X(i), Y(v)]);
+    s += `<path d="${path(pE)}" fill="none" stroke="#8C9A90" stroke-width="2" stroke-dasharray="6 4" stroke-linejoin="round" class="fade"/>`;
+    s += `<path d="${path(pR)}" fill="none" stroke="${OPCOR[o.k]}" stroke-width="2.8" stroke-linejoin="round" stroke-linecap="round" class="linha" style="--len:${Math.ceil(len(pR)) + 4}"/>`;
+    // projeção no ritmo das últimas 4 semanas
+    if (x.prev && x.falta > 0) { const ip = iD(x.prev), xe = ip >= 0 ? X(ip) : X(n - 1), ye = ip >= 0 ? Y(o.tot) : Y(o.r + x.ritmo * (n - 1 - ih)); s += `<line class="fade" x1="${X(ih)}" y1="${Y(o.r)}" x2="${xe}" y2="${ye}" stroke="${OPCOR[o.k]}" stroke-width="2" stroke-dasharray="1 5" stroke-linecap="round"/>${ip >= 0 ? `<circle class="fade" cx="${xe}" cy="${ye}" r="4" fill="#fff" stroke="${OPCOR[o.k]}" stroke-width="2"/>` : ''}`; }
+    // hoje
+    s += `<line class="fade" x1="${X(ih)}" x2="${X(ih)}" y1="${pt - 6}" y2="${Hh - pb}" stroke="#18301F" stroke-width="1" opacity=".5"/><circle class="fade" cx="${X(ih)}" cy="${Y(o.r)}" r="5" fill="${OPCOR[o.k]}" stroke="#fff" stroke-width="2"/><circle class="fade" cx="${X(ih)}" cy="${Y(E[ih])}" r="4" fill="#fff" stroke="#8C9A90" stroke-width="2"/>`;
+    s += `<text class="lb fade" x="${X(ih) - 8}" y="${Math.min(Y(o.r), Y(E[ih])) - 10}" text-anchor="end">hoje ${dBR(x.h)}</text>`;
+    // dica por semana
+    for (let i = 0; i < n; i += 7) {
+      const j = Math.min(n - 1, i + 6), d = dias[j], er = R[j];
+      s += `<rect x="${X(i)}" y="${pt}" width="${Math.max(2, X(j) - X(i) + (j === n - 1 ? 0 : (w - pl - pr) / n))}" height="${Hh - pt - pb}" fill="transparent" data-tip="${esc(`<b>até ${dBRa(d)}</b><br>Esperado: <b>${nf(E[j], 0)} ha</b> (${pc(E[j] / o.tot)})${er != null ? `<br>Realizado: <b>${nf(er, 0)} ha</b> (${pc(er / o.tot)})<br>Diferença: <b>${U.nfs(er - E[j], 0)} ha</b>` : ''}`)}"/>`;
+    }
+    el.innerHTML = s + '</svg>';
+  }
+  function pHerb() {
+    const { nf, pc, esc, dBR, dBRa, cascata } = U, el = $('#hbOps');
+    if (!H || !H.ops) { el.innerHTML = '<div class="ft-vazio" style="grid-column:1/-1">Ainda não há dados da Matriz de Herbicida publicados. Use “Sincronizar”.</div>'; $('#hbFila').innerHTML = ''; pOS(); return; }
+    $('#hbData').textContent = `posição de ${dBRa(hojeH())} · Matriz FO.SA.23`;
+    const ks = ['2007', '2242'].filter(k => H.ops[k]);
+    el.innerHTML = ks.map((k, i) => {
+      const o = { ...H.ops[k], k }, x = situacao(o), st = x.ad == null ? 'nd' : x.ad >= .97 ? 'ok' : x.ad >= .9 ? 'warn' : 'bad';
+      const dif = o.r - x.esp;
+      return `<article class="card hb-op" style="--i:${i};--c:${OPCOR[k]}"><header class="hb-op__h"><span class="hb-cod">${k}</span><div><h3>${esc(o.nome)}</h3><small>${nf(o.n)} talhões · ${nf(o.fin)} com OS finalizada</small></div><span class="ft-tag ${st}" title="realizado ÷ esperado até hoje">aderência ${pc(x.ad)}</span></header>
+        <div class="hb-nums">
+          <div><small>Área total</small><b>${nf(o.tot, 0)}<em>ha</em></b><span>${o.semData ? nf(o.semData, 0) + ' ha sem data planejada' : 'planejada na safra'}</span></div>
+          <div><small>Esperado até hoje</small><b>${nf(x.esp, 0)}<em>ha</em></b><span>${pc(x.esp / o.tot)} da área total</span></div>
+          <div class="is-r"><small>Realizado (apontado)</small><b>${nf(o.r, 0)}<em>ha</em></b><span>${pc(o.r / o.tot)} da área · <b class="${dif < 0 ? 'neg' : 'pos'}">${U.nfs(dif, 0)} ha</b> do esperado</span></div>
+          <div><small>Saldo a realizar</small><b>${nf(x.falta, 0)}<em>ha</em></b><span>${nf(o.aa, 0)} ha liberados para aplicar</span></div>
+        </div>
+        <div class="ft-chart hb-ch" id="hbCh${k}"></div>
+        <footer class="hb-leg"><span><i class="l-r"></i>Realizado</span><span><i class="l-e"></i>Esperado (data planejada)</span><span><i class="l-p"></i>Projeção no ritmo de 4 semanas</span><span class="hb-prev">${x.falta <= 0 ? 'Concluída' : x.prev ? `ritmo ${nf(x.ritmo, 0)} ha/dia → conclui em <b>${dBRa(x.prev)}</b>${x.fimPlano ? ` · plano ${dBRa(x.fimPlano)}` : ''}` : 'sem apontamento nas últimas 4 semanas'}</span></footer></article>`;
+    }).join('');
+    cascata(el);
+    ks.forEach(k => curvaS($('#hbCh' + k), { ...H.ops[k], k }, situacao({ ...H.ops[k], k })));
+    pFila(); pOS();
+  }
+  /** Fila das próximas aplicações (aba Resumo): uma coluna por frente, na ordem da sequência. */
+  function pFila() {
+    const { nf, esc, dBR, sum } = U, el = $('#hbFila'), F = H.fila || [];
+    const fr = [...new Set(F.map(x => x.f))].sort((a, b) => a - b);
+    if (!fr.length) { el.innerHTML = '<div class="ft-vazio">Sem aplicações na fila do Resumo.</div>'; return; }
+    const hm = s => s ? `${dBR(s.slice(0, 10))} ${s.slice(11, 16)}` : '—';
+    el.innerHTML = fr.map((f, i) => {
+      const L = F.filter(x => x.f === f).sort((a, b) => (a.s ?? 0) - (b.s ?? 0) || String(a.ent).localeCompare(String(b.ent))), aberto = S.filaAberta === f, mostra = aberto ? L : L.slice(0, 5);
+      const ops = {}; L.forEach(x => ops[x.op] = (ops[x.op] || 0) + x.ha);
+      return `<article class="hb-fr" style="--i:${i}"><header><div><b>Frente ${esc(f)}</b><small>${esc(H.frentes[f] || '')}</small></div><div class="hb-fr__t"><b>${nf(sum(L.map(x => x.ha)), 1)} ha</b><small>${L.length} na fila${L[L.length - 1].sai ? ' · até ' + dBR(L[L.length - 1].sai.slice(0, 10)) : ''}</small></div></header>
+        <div class="hb-mix">${Object.entries(ops).sort((a, b) => b[1] - a[1]).map(([o, v]) => `<i style="--w:${v / sum(L.map(x => x.ha)) * 100}%;background:${OPCOR[o] || '#9AA59D'}" data-tip="${esc(`<b>${o}</b> · ${nf(v, 1)} ha`)}"></i>`).join('')}</div>
+        <ol>${mostra.map((x, j) => `<li style="--c:${OPCOR[x.op] || '#9AA59D'}"><span class="hb-seq">${nf(x.s, Number.isInteger(x.s) ? 0 : 1)}</span><div class="hb-it"><div class="hb-it__l1"><span class="hb-chip" title="${esc(x.nome)}">${esc(x.op)}</span><b title="${esc(x.faz)}">${esc(x.faz.replace(/^\d+-/, '').replace(/^Fazenda\s+/i, ''))}</b><span class="hb-ha">${nf(x.ha, 1)} ha</span></div><div class="hb-it__l2"><span>${esc(x.nome)}</span><span>${esc(x.faz.match(/^\d+/)?.[0] || '')}${x.tal ? ' · talhões ' + esc(x.tal) : ''}</span>${j === 0 ? '<span class="hb-ent">agora</span>' : x.ent ? `<span class="hb-ent">${hm(x.ent)}</span>` : ''}</div></div></li>`).join('')}</ol>
+        ${L.length > 5 ? `<button type="button" class="hb-mais" data-f="${esc(f)}">${aberto ? 'Mostrar menos' : `Ver todas (+${L.length - 5})`}</button>` : ''}</article>`;
+    }).join('');
+    U.cascata(el);
+  }
+
+  /* =================== ORDENS DE SERVIÇO (Matriz: abas O.S + Apontamento 2026) =================== */
+  const OS_LIM = { velha: 30, muitoVelha: 60, parada: 10 };
+  const ddias = (a, b) => Math.round((new Date(b + 'T12:00:00Z') - new Date(a + 'T12:00:00Z')) / 864e5);
+  function osLista() {
+    const h = hojeH();
+    return (H.os || []).map(o => {
+      const p = o.area ? Math.min(1.2, o.real / o.area) : 0, aberta = o.sit === 'A', idade = o.em ? ddias(o.em, h) : null, al = [];
+      if (aberta) {
+        if (p >= .98) al.push(['ok', 'Apontada 100% · finalizar OS']);
+        if (!o.real && idade > 7) al.push(['warn', 'Sem apontamento']);
+        else if (o.real && o.ult && p < .98 && ddias(o.ult, h) > OS_LIM.parada) al.push(['warn', `Parada há ${ddias(o.ult, h)} dias`]);
+      }
+      if (o.real > o.area * 1.05) al.push(['bad', 'Apontado acima da área']);
+      const peso = al.reduce((s, a) => s + (a[0] === 'bad' ? 3 : a[0] === 'warn' ? 2 : 1), 0) + (aberta && idade > OS_LIM.velha ? 2 : 0);
+      return { ...o, p, aberta, idade, al, peso };
     });
-    const ab = L.filter(o => o.status !== 'Concluída'), falt = sum(ab.map(o => o.falt));
-    const kp = $('#pzOSK');
+  }
+  function pOS() {
+    const { nf, pc, esc, dBR, dBRa, sum, avg, kpi, cascata, animar } = U;
+    const sec = $('#pzOS'); if (!H || !H.os) { sec.hidden = true; return; } sec.hidden = false;
+    const T = osLista(), A = T.filter(o => o.aberta), meta = (D && D.parametros && D.parametros.metaHaDia) || 150;
+    const falt = sum(A.map(o => Math.max(0, o.area - o.real))), semAp = A.filter(o => !o.real), idM = avg(A.map(o => o.idade)), velha = A.slice().sort((a, b) => b.idade - a.idade)[0];
+    const kp = $('#osK');
     kp.innerHTML = [
-      kpi({ t: 'Em andamento', ic: 'fa-spinner', v: L.filter(o => o.status === 'Em andamento').length, sub: 'OS com aplicação iniciada' }),
-      kpi({ t: 'Não iniciadas', ic: 'fa-hourglass-start', v: L.filter(o => o.status === 'Não iniciada').length, sub: `${L.filter(o => o.status === 'Concluída').length} concluídas no total` }),
-      kpi({ t: 'Área faltante', ic: 'fa-map', v: falt, dec: 1, un: 'ha', sub: `${nf(sum(ab.map(o => o.area)), 0)} ha em OS abertas` }),
-      kpi({ t: 'Carteira', ic: 'fa-calendar-days', v: falt / P.metaHaDia, dec: 1, un: 'dias', sub: `no ritmo da meta de ${nf(P.metaHaDia)} ha/dia` }),
-      kpi({ t: 'OS com alerta', ic: 'fa-triangle-exclamation', v: ab.filter(o => o.al.length).length, sub: 'abertas há muito tempo, sem mapa ou sem operação', st: ab.some(o => o.al.length) ? 'warn' : 'ok' }),
+      kpi({ t: 'OS abertas', ic: 'fa-folder-open', v: A.length, sub: `${nf(sum(A.map(o => o.area)), 0)} ha emitidos · ${T.length - A.length} finalizadas` }),
+      kpi({ t: 'Sem apontamento', ic: 'fa-circle-pause', v: semAp.length, un: `de ${A.length}`, sub: `${nf(sum(semAp.map(o => o.area)), 0)} ha emitidos e não iniciados`, st: semAp.length / Math.max(1, A.length) > .5 ? 'bad' : semAp.length ? 'warn' : 'ok', bar: A.length ? semAp.length / A.length : null }),
+      kpi({ t: 'Área faltante', ic: 'fa-map', v: falt, dec: 0, un: 'ha', sub: `${nf(falt / meta, 1)} dias no ritmo de ${nf(meta)} ha/dia` }),
+      kpi({ t: 'Idade média', ic: 'fa-hourglass-half', v: idM, dec: 0, un: 'dias', sub: velha ? `mais antiga: OS ${esc(velha.os)} · ${velha.idade} dias` : '', st: idM == null ? '' : idM > OS_LIM.velha ? 'bad' : idM > 15 ? 'warn' : 'ok' }),
+      kpi({ t: `Abertas há +${OS_LIM.velha} dias`, ic: 'fa-triangle-exclamation', v: A.filter(o => o.idade > OS_LIM.velha).length, un: `de ${A.length}`, sub: `${A.filter(o => o.al.some(a => a[0] === 'ok')).length} apontada(s) 100% para finalizar`, st: A.some(o => o.idade > OS_LIM.muitoVelha) ? 'bad' : A.some(o => o.idade > OS_LIM.velha) ? 'warn' : 'ok', bar: A.length ? A.filter(o => o.idade > OS_LIM.velha).length / A.length : null }),
     ].join(''); cascata(kp); animar(kp);
-    const mostra = S.osTodas ? L : ab;
-    const ord = { 'Em andamento': 0, 'Não iniciada': 1, 'Concluída': 2 };
-    mostra.sort((a, b) => b.al.length - a.al.length || ord[a.status] - ord[b.status] || String(a.abertura).localeCompare(String(b.abertura)));
-    const stc = { 'Concluída': 'ok', 'Em andamento': 'warn', 'Não iniciada': 'bad' };
-    $('#pzOSTab').innerHTML = `<table><thead><tr><th>OS</th><th>Operação</th><th>Pulv.</th><th>Fazenda</th><th>Talhões</th><th class="n">Área</th><th>Progresso</th><th>Status</th><th class="n">Idade</th><th class="n">Previsão</th><th>Alerta</th></tr></thead><tbody>${mostra.map(o => `<tr><td><b>${esc(o.os)}</b></td><td>${esc(o.opNome || o.op || '—')}</td><td>${esc(o.eq)}</td><td>${esc(o.fazNome || o.faz)}</td><td class="pz-tal" title="${esc(o.talhoes)}">${esc(o.talhoes)}</td><td class="n">${nf(o.area, 1)}</td><td><div class="pz-prog"><div class="trk"><i style="--w:${Math.min(100, o.p * 100)}%;background:${o.p >= 1 ? '#2E7D32' : '#3C7A35'}"></i></div><span>${pc(o.p)}</span></div></td><td><span class="ft-tag ${stc[o.status]}">${o.status}</span></td><td class="n">${o.idade == null ? '—' : o.idade + ' d'}</td><td class="n">${o.prev == null ? '—' : nf(o.prev, 1) + ' d'}</td><td>${o.al.map(a => `<span class="pz-al">${esc(a)}</span>`).join('')}</td></tr>`).join('')}</tbody></table>`;
-    U.mover($('#pzOSFiltro'), $(`#pzOSFiltro button[data-v="${S.osTodas ? 'todas' : 'abertas'}"]`), true);
+    // abertas por operação (área emitida × apontada) — clique filtra
+    const ops = [...new Set(A.map(o => o.op))].map(op => { const L = A.filter(o => o.op === op); return { op, nome: L[0].opNome || 'Operação ' + op, n: L.length, area: sum(L.map(o => o.area)), real: sum(L.map(o => Math.min(o.real, o.area))) }; }).sort((a, b) => b.area - a.area);
+    const mx = Math.max(1, ...ops.map(o => o.area));
+    $('#osOps').innerHTML = ops.map((o, i) => `<button type="button" class="os-op${S.osOp === o.op ? ' is-on' : ''}" data-op="${esc(o.op)}" style="--i:${i};--c:${OPCOR[o.op] || '#9AA59D'}"><span class="hb-chip">${esc(o.op)}</span><span class="os-op__n">${esc(o.nome)}<small>${o.n} OS</small></span><span class="os-op__b"><i style="--w:${o.area / mx * 100}%"><em style="--w:${o.area ? o.real / o.area * 100 : 0}%"></em></i></span><b>${nf(o.area, 0)} ha</b><small class="os-op__p">${pc(o.area ? o.real / o.area : 0)} apont.</small></button>`).join('') || '<div class="ft-vazio">Nenhuma OS aberta.</div>';
+    // idade das abertas
+    const fx = [['até 15 dias', o => o.idade <= 15, 'ok'], ['16 a 30', o => o.idade > 15 && o.idade <= 30, 'warn'], ['31 a 60', o => o.idade > 30 && o.idade <= 60, 'bad'], ['mais de 60', o => o.idade > 60, 'bad']];
+    const fv = fx.map(([n, f, c]) => { const L = A.filter(f); return { n, c, q: L.length, ha: sum(L.map(o => o.area)) }; }), fm = Math.max(1, ...fv.map(x => x.q));
+    $('#osIdade').innerHTML = fv.map((x, i) => `<div class="os-id ${x.c}${x.n === 'mais de 60' ? ' is-max' : ''}" style="--i:${i}"><b>${x.q}</b><div class="os-id__b"><i style="--h:${x.q / fm * 100}%"></i></div><span>${x.n}</span><small>${nf(x.ha, 0)} ha</small></div>`).join('');
+    // tabela
+    const vis = S.osVer === 'todas' ? T : S.osVer === 'fin' ? T.filter(o => !o.aberta) : A;
+    const L = vis.filter(o => !S.osOp || o.op === S.osOp).sort((a, b) => S.osVer === 'abertas' ? b.peso - a.peso || b.idade - a.idade : String(b.em).localeCompare(String(a.em)));
+    $('#osN').textContent = `${L.length} OS${S.osOp ? ' · operação ' + S.osOp : ''}`;
+    const stc = o => o.aberta ? (o.real ? ['warn', 'Em andamento'] : ['bad', 'Não iniciada']) : ['ok', 'Finalizada'];
+    const idc = o => !o.aberta ? '' : o.idade > OS_LIM.muitoVelha ? 'bad' : o.idade > OS_LIM.velha ? 'warn' : 'ok';
+    $('#osTab').innerHTML = `<table><thead><tr><th>OS</th><th>Operação</th><th>Fazenda</th><th>Talhões</th><th class="n">Área</th><th>Apontado</th><th>Status</th><th class="n">Emitida</th><th class="n">Idade</th><th class="n">Últ. apont.</th><th>Alerta</th></tr></thead><tbody>${L.slice(0, S.osMais ? 9999 : 60).map((o, i) => { const [sc, sn] = stc(o); return `<tr class="os-tr${S.osAb === o.os ? ' is-on' : ''}" data-os="${esc(o.os)}" style="--i:${Math.min(i, 24)};--c:${OPCOR[o.op] || '#9AA59D'}"><td><b>${esc(o.os)}</b></td><td><span class="hb-chip">${esc(o.op)}</span> <span class="os-opn">${esc(o.opNome || '')}</span></td><td>${esc(o.fazNome || o.faz)}${o.nFaz > 1 ? ` <small class="os-mais">+${o.nFaz - 1}</small>` : ''}<small class="os-cod">${esc(o.faz)}</small></td><td class="os-tal" title="${esc(o.tal)}">${esc(o.tal)}</td><td class="n">${nf(o.area, 1)}</td><td><div class="pz-prog"><div class="trk"><i style="--w:${Math.min(100, o.p * 100)}%;background:var(--c)"></i></div><span>${pc(o.p)}</span></div></td><td><span class="ft-tag ${sc}">${sn}</span></td><td class="n">${o.em ? dBR(o.em) : '—'}</td><td class="n">${o.idade == null ? '—' : `<span class="os-age ${o.aberta ? idc(o) : ''}">${o.idade} d</span>`}</td><td class="n">${o.ult ? dBR(o.ult) : '—'}</td><td>${o.al.map(a => `<span class="os-al ${a[0]}">${esc(a[1])}</span>`).join('')}</td></tr>${S.osAb === o.os ? `<tr class="os-det"><td colspan="11"><div class="os-det__g"><div><small>Talhões (${o.nTal})</small><p>${esc(o.tal)}</p></div><div><small>Recursos</small><p>${o.rec && o.rec.length ? o.rec.map(esc).join(' · ') : '—'}${o.f ? ` · Frente ${esc(o.f)}${H.frentes && H.frentes[o.f] ? ' (' + esc(H.frentes[o.f]) + ')' : ''}` : ''}</p></div><div class="os-det__p"><small>Produtos da OS</small>${o.prod.length ? `<table><thead><tr><th>Produto</th><th class="n">Dose/ha</th><th class="n">Total</th></tr></thead><tbody>${o.prod.map(p => `<tr><td>${esc(p.n)}</td><td class="n">${p.d == null ? '—' : nf(p.d, p.d < 1 ? 3 : 2)}</td><td class="n">${nf(p.q, 1)}</td></tr>`).join('')}</tbody></table>` : '<p>—</p>'}</div></div></td></tr>` : ''}`; }).join('')}</tbody></table>${L.length > 60 && !S.osMais ? `<button type="button" class="hb-mais" data-osmais="1">Ver todas (+${L.length - 60})</button>` : ''}`;
+    U.mover($('#osVer'), $(`#osVer button[data-v="${S.osVer}"]`), true);
   }
 
   /* ---------- montagem ---------- */
   function ligar() {
     if (ligado) return; ligado = true;
-    $('#pzOSFiltro').onclick = e => { const b = e.target.closest('button'); if (b) { S.osTodas = b.dataset.v === 'todas'; pOS(); } };
+    $('#osVer').onclick = e => { const b = e.target.closest('button'); if (b) { S.osVer = b.dataset.v; S.osMais = false; pOS(); } };
+    $('#osOps').onclick = e => { const b = e.target.closest('.os-op'); if (b) { S.osOp = S.osOp === b.dataset.op ? null : b.dataset.op; pOS(); } };
+    $('#osTab').onclick = e => { if (e.target.closest('[data-osmais]')) { S.osMais = true; pOS(); return; } const r = e.target.closest('tr.os-tr'); if (r) { S.osAb = S.osAb === r.dataset.os ? null : r.dataset.os; pOS(); } };
+    $('#hbFila').onclick = e => { const b = e.target.closest('.hb-mais'); if (b) { S.filaAberta = S.filaAberta === b.dataset.f ? null : b.dataset.f; pFila(); } };
     $('#pzBaixar').onclick = async () => { const c = await imagem(); if (!c) return; const a = document.createElement('a'); a.href = c.toDataURL('image/png'); const R = regAtual(); a.download = `status-pulverizacao-${R.data}${R.turno ? '-' + R.turno.replace(/\W+/g, '') : ''}.png`; a.click(); U.toast('Imagem baixada.'); };
     $('#pzCopiar').onclick = async () => { try { const c = await imagem(); if (!c) return; const blob = await new Promise(r => c.toBlob(r, 'image/png')); await navigator.clipboard.write([new ClipboardItem({ 'image/png': blob })]); U.toast('Imagem copiada — é só colar no grupo.'); } catch (e) { U.toast('Não foi possível copiar. Use “Baixar imagem”.'); } };
     $$('.pz-reg').forEach(n => {
       n.querySelector('select').onchange = e => irReg(e.target.value);
       n.onclick = e => { const b = e.target.closest('button[data-n]'); if (!b) return; const L = regs(), k = regAtual().k, i = L.findIndex(r => r.k === k) + +b.dataset.n; if (L[i]) irReg(L[i].k); };
     });
-    let tm; addEventListener('resize', () => { clearTimeout(tm); tm = setTimeout(() => { if (D && visivel()) { pProd(); pQual(); } }, 220); });
+    let tm; addEventListener('resize', () => { clearTimeout(tm); tm = setTimeout(() => { if (D && visivel()) { pProd(); pQual(); pHerb(); } }, 220); });
   }
   const visivel = () => { const pg = $('.page[data-p="pulv"]'); return pg && pg.classList.contains('is-on'); };
   function montar() {
@@ -280,11 +392,11 @@ window.Pulverizacao = (function () {
     const tP = TURNOS.filter(t => D.producao.some(p => p.t === t)), tQ = TURNOS.filter(t => D.qualidade.some(q => q.turno === t));
     const padP = () => ({ de: dP[0], ate: dP[dP.length - 1], t: 'todos', eq: 'todos' });
     const padQ = () => ({ de: U.addD(dQ[dQ.length - 1], -29), ate: dQ[dQ.length - 1], t: 'todos', eq: 'todos' });
-    if (!S) S = { p: padP(), q: padQ(), osTodas: false };
+    if (!S) S = { p: padP(), q: padQ(), filaAberta: null, osVer: 'abertas', osOp: null, osAb: null, osMais: false };
     S.fbP = filtro($('#pzFbProd'), S.p, { turnos: tP, frotas: eqP, min: dP[0], max: dP[dP.length - 1], padrao: padP, cb: pProd });
     S.fbQ = filtro($('#pzFbQual'), S.q, { turnos: tQ, frotas: eqQ, min: dQ[0], max: dQ[dQ.length - 1], padrao: padQ, cb: pQual });
     ligar();
-    pResumo(); pFrota(); pRegNav(); pCaminhoes(); pCard(); pProd(); pQual(); pOS();
+    pResumo(); pFrota(); pRegNav(); pCaminhoes(); pCard(); pProd(); pQual(); pHerb();
     montado = true;
     if (window.Aviacao && Aviacao.dados) Aviacao.aoEntrar(); // nomes das fazendas da aviação vêm do cadastro da pulverização
   }
@@ -297,8 +409,15 @@ window.Pulverizacao = (function () {
       else if (pg.dataset.p === 'fert') dispatchEvent(new Event('resize'));
     };
   }
-  async function iniciar(dados) {
+  /** herbicida.json (Matriz FO.SA.23) é carregado à parte: a página funciona com ou sem ele */
+  async function carregarHerb(dados) {
+    if (dados) H = dados; else try { const r = await fetch(ARQ_HERB, { cache: 'no-store' }); if (r.ok) H = (await Acesso.readJson(await r.json())).data; } catch (e) { /* sem arquivo ainda */ }
+    if (montado) pHerb();
+  }
+  function definirHerb(dados) { H = dados; if (montado) pHerb(); }
+  async function iniciar(dados, herb) {
     if (!window.Fertirrigacao || !Fertirrigacao.util) return;
+    carregarHerb(herb);
     if (dados) { D = dados; montar(); return; }
     try {
       const r = await fetch(ARQ, { cache: 'no-store' }); if (!r.ok) throw new Error('sem arquivo');
@@ -306,7 +425,7 @@ window.Pulverizacao = (function () {
     } catch (e) { const el = $('#pzKpis'); if (el) el.innerHTML = '<div class="ft-vazio" style="grid-column:1/-1">Ainda não há dados da pulverização publicados. Use “Sincronizar”.</div>'; }
   }
   /** chamado quando a página aparece: redesenha os gráficos na largura certa e refaz as animações */
-  function aoEntrar() { if (!D || !montado) return; pResumo(); pFrota(); pCaminhoes(); pProd(); pQual(); requestAnimationFrame(() => { S.fbP.sync(true); S.fbQ.sync(true); U.mover($('#pzOSFiltro'), $(`#pzOSFiltro button[data-v="${S.osTodas ? 'todas' : 'abertas'}"]`), true); }); }
+  function aoEntrar() { if (!D || !montado) return; pResumo(); pFrota(); pCaminhoes(); pProd(); pQual(); pHerb(); requestAnimationFrame(() => { S.fbP.sync(true); S.fbQ.sync(true); if (H && H.os) U.mover($('#osVer'), $(`#osVer button[data-v="${S.osVer}"]`), true); }); }
   function definir(dados) { D = dados; S = null; montar(); }
-  return { iniciar, definir, aoEntrar, VERSAO, ARQ, get dados() { return D; } };
+  return { iniciar, definir, definirHerb, aoEntrar, VERSAO, ARQ, ARQ_HERB, get dados() { return D; }, get herb() { return H; } };
 })();
