@@ -33,11 +33,20 @@
 .pz-tq__info small { font-size: 11.5px; color: var(--muted); }
 .pz-tq__info .ft-tag { align-self: flex-start; }
 
-/* imagem */
-.pz-cl { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 5px 14px; }
-.pz-ci { display: grid; grid-template-columns: 10px 50px minmax(0, 1fr); gap: 7px; align-items: center; font-size: 12.5px; }
-.pz-ci span:last-child { color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.pz-cn { display: grid; grid-template-columns: 54px minmax(0, 1fr) 150px; gap: 10px; align-items: center; font-size: 12.5px; margin: 4px 0; }
+/* imagem (Status · Pulverização): nada cortado — nome do equipamento inteiro e motivo quebra linha */
+.pz-cl { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 7px 24px; }
+.pz-ci { display: grid; grid-template-columns: 10px minmax(72px, max-content) minmax(0, 1fr); gap: 4px 10px; align-items: baseline; font-size: 12.5px; line-height: 1.35; min-width: 0; }
+.pz-ci .pz-dot { align-self: start; margin-top: 4px; }
+.pz-ci > b { font-weight: 800; color: var(--ink); white-space: nowrap; font-variant-numeric: tabular-nums; }
+.pz-ci__s { color: var(--muted); overflow-wrap: anywhere; min-width: 0; }
+.pz-ci__s em { font-style: normal; font-weight: 700; color: var(--ink); }
+.pz-ci.ok .pz-ci__s em { color: #2E7D32; } .pz-ci.warn .pz-ci__s em { color: #9A6B00; } .pz-ci.bad .pz-ci__s em { color: #C62828; }
+.pz-cn { display: grid; grid-template-columns: 56px minmax(0, 1fr) 190px; gap: 12px; align-items: center; font-size: 12.5px; margin: 6px 0; }
+.pz-cn > b { font-weight: 800; color: var(--ink); font-variant-numeric: tabular-nums; }
+.pz-cn > span { color: var(--muted); white-space: nowrap; font-variant-numeric: tabular-nums; }
+.pz-cn > span b { color: var(--ink); }
+#pzCard .fc-foot { gap: 12px; } #pzCard .fc-foot span:last-child { white-space: nowrap; }
+@media (max-width: 560px) { .pz-cl { grid-template-columns: minmax(0, 1fr); } .pz-cn { grid-template-columns: 46px minmax(0, 1fr) 138px; gap: 8px; font-size: 11.5px; } .pz-ci { grid-template-columns: 10px minmax(64px, max-content) minmax(0, 1fr); } }
 .fc-trk { height: 10px; border-radius: 5px; background: #EEF1EC; overflow: hidden; }
 .fc-trk i { display: block; height: 100%; border-radius: 5px; width: var(--w); }
 
@@ -66,7 +75,7 @@
 @media (max-width: 760px) {
   .pz-frs { grid-template-columns: minmax(0, 1fr); }
   .pz-cl { grid-template-columns: minmax(0, 1fr); }
-  .pz-cn { grid-template-columns: 50px minmax(0, 1fr); } .pz-cn span { grid-column: 1 / -1; color: var(--muted); }
+
   .pz-eq { grid-template-columns: 12px 52px auto minmax(0, 1fr); }
   .pz-tqs { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
   .pz-tq { flex-direction: column; align-items: flex-start; padding: 12px; }
