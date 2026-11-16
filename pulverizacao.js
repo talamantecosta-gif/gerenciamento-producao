@@ -4,13 +4,13 @@
    Seções: Resumo · Status da frota (+ imagem para o grupo) · Caminhões ·
    Produção (IOA PULVE, meta 150 ha/dia por pulverizador) · Qualidade da
    aplicação · Planejamento de herbicidas (herbicida.json, Matriz FO.SA.23:
-   esperado × realizado das operações 2007 e 2242, fila das próximas aplicações e
+   esperado × realizado acumulado de cada operação e de todas somadas, fila das próximas aplicações e
    ordens de serviço com o apontado de cada uma).
    window.Pulverizacao = { iniciar(), definir(dados), aoEntrar(), VERSAO }
    ========================================================================= */
 window.Pulverizacao = (function () {
   'use strict';
-  const VERSAO = 2;
+  const VERSAO = 3;
   const ARQ = 'pulverizacao.json', ARQ_HERB = 'herbicida.json';
   const ORDEM_FRENTES = ['PULVERIZADOR', 'HERBICAT', 'CALDA PRONTA', 'CORTE DE SOQUEIRA', 'AVIAÇÃO', 'BASE'];
   const ST_COR = { 'Rodando': 'ok', 'Parado': 'warn', 'Falta operador': 'warn', 'Manutenção': 'bad', 'Sem status': 'nd' };
@@ -233,76 +233,86 @@ window.Pulverizacao = (function () {
   }
 
   /* =================== PLANEJAMENTO DE HERBICIDAS (Matriz FO.SA.23) =================== */
-  const OPCOR = { '2007': '#1F4D2B', '2242': '#3C7A35', '2260': '#2B7A78', '2111': '#B07A00', '2075': '#2a6fb0', '2175': '#7A4FB0', '2201': '#5E9A57', '2136': '#8A5A2B' };
+  const OPCOR = { '2007': '#1F4D2B', '2242': '#3C7A35', '2260': '#2B7A78', '2111': '#B07A00', '2075': '#2a6fb0', '2175': '#7A4FB0', '2201': '#5E9A57', '2136': '#8A5A2B', '2041': '#C25E2E', todas: '#18301F' };
+  const OPORDEM = ['2136', '2007', '2242', '2111', '2260', '2175', '2201', '2041', '2075'];
+  const OPCURTO = { '2136': 'Quebra-lombo', '2007': '1ª aplicação', '2242': '1ª bordadura', '2111': 'Catação química', '2260': '2ª bordadura', '2175': 'Extensor de residual', '2201': '2ª aplicação', '2041': 'Dessecação', '2075': 'Inseticida pingente' };
+  const MESES = ['jan', 'fev', 'mar', 'abr', 'mai', 'jun', 'jul', 'ago', 'set', 'out', 'nov', 'dez'];
   const hojeH = () => (H.gerado || new Date().toISOString()).slice(0, 10);
   const acum = (mapa, ate) => Object.entries(mapa || {}).reduce((a, [d, v]) => a + (d <= ate ? v : 0), 0);
-  function situacao(o) {
-    const h = hojeH(), esp = acum(o.esp, h), ad = esp ? o.r / esp : null;
-    const r28 = acum(o.real, h) - acum(o.real, U.addD(h, -28)), ritmo = r28 / 28, falta = Math.max(0, o.tot - o.r);
-    const prev = falta <= 0 ? h : ritmo > 0 ? U.addD(h, Math.ceil(falta / ritmo)) : null;
-    const fimPlano = Object.keys(o.esp || {}).sort().pop() || null;
-    return { h, esp, ad, ritmo, falta, prev, fimPlano };
+  const fimMes = m => { const [y, mm] = m.split('-').map(Number); return new Date(Date.UTC(y, mm, 0)).toISOString().slice(0, 10); };
+  const mLabel = m => MESES[+m.slice(5) - 1] + (m.slice(5) === '01' ? '/' + m.slice(2, 4) : '');
+  /** operações com área na matriz; "todas" = soma de tudo que tinha que fazer × tudo que foi feito */
+  function herbOps() {
+    const L = OPORDEM.filter(k => H.ops[k] && H.ops[k].tot > 0).map(k => ({ ...H.ops[k], k, curto: OPCURTO[k] || H.ops[k].nome }));
+    const soma = { k: 'todas', curto: 'Todas as operações', nome: 'Todas as operações', tot: 0, r: 0, a: 0, aa: 0, n: 0, semData: 0, esp: {}, real: {} };
+    L.forEach(o => { ['tot', 'r', 'a', 'aa', 'n', 'semData'].forEach(c => soma[c] += o[c] || 0); ['esp', 'real'].forEach(c => Object.entries(o[c]).forEach(([d, v]) => soma[c][d] = (soma[c][d] || 0) + v)); });
+    return [soma, ...L];
   }
-  /** Curva acumulada: esperado (data planejada) × realizado (data do apontamento), linha da área total, hoje e projeção. */
-  function curvaS(el, o, x) {
-    const { nf, pc, esc, dBR, dBRa, addD, rangeD, W, pilula } = U;
-    const ds = [...Object.keys(o.esp), ...Object.keys(o.real)].sort(); if (!ds.length) { U.vazio(el); return; }
-    const ini = addD(ds[0], -3), fimDados = [ds[ds.length - 1], x.h].sort().pop();
-    const fim = x.prev && x.prev > fimDados && x.prev <= addD(fimDados, 150) ? x.prev : fimDados;
-    const dias = rangeD(ini, fim), w = W(el), Hh = 270, pl = 52, pr = 92, pt = 18, pb = 28, n = dias.length;
-    const mx = o.tot * 1.1, X = i => pl + i * (w - pl - pr) / Math.max(1, n - 1), Y = v => pt + (Hh - pt - pb) * (1 - v / mx), iD = d => dias.indexOf(d);
-    let e = 0, r = 0; const E = [], R = [];
-    dias.forEach(d => { e += o.esp[d] || 0; r += o.real[d] || 0; E.push(e); R.push(d <= x.h ? r : null); });
-    let s = `<svg viewBox="0 0 ${w} ${Hh}" width="${w}" height="${Hh}" role="img"><defs><linearGradient id="hbG${o.k}" x1="0" x2="0" y1="0" y2="1"><stop offset="0" stop-color="${OPCOR[o.k]}" stop-opacity=".22"/><stop offset="1" stop-color="${OPCOR[o.k]}" stop-opacity="0"/></linearGradient></defs>` + U.eixoY(mx / 1.1, Y, pl, w - pr, v => nf(v, 0));
-    // meses no eixo X
-    const pM = Math.max(1, Math.ceil(34 / ((w - pl - pr) / n * 30.4))); let iM = 0;
-    dias.forEach((d, i) => { if (d.slice(8) === '01' && iM++ % pM === 0) s += `<line x1="${X(i)}" x2="${X(i)}" y1="${Hh - pb}" y2="${Hh - pb + 4}" stroke="#C9D0C5"/><text x="${X(i) + 3}" y="${Hh - 8}" style="font-size:10.5px">${['jan', 'fev', 'mar', 'abr', 'mai', 'jun', 'jul', 'ago', 'set', 'out', 'nov', 'dez'][+d.slice(5, 7) - 1]}${d.slice(5, 7) === '01' ? '/' + d.slice(2, 4) : ''}</text>`; });
-    const ih = Math.min(n - 1, Math.max(0, iD(x.h)));
-    // atraso: área entre as curvas até hoje
-    const atraso = []; for (let i = 0; i <= ih; i++) atraso.push([X(i), Y(E[i]), Y(R[i])]);
-    if (atraso.length > 1) s += `<path class="fade" d="M${atraso.map(p => p[0].toFixed(1) + ' ' + p[1].toFixed(1)).join(' L')} L${atraso.slice().reverse().map(p => p[0].toFixed(1) + ' ' + p[2].toFixed(1)).join(' L')} Z" fill="#C62828" opacity=".07"/>`;
-    // área total
-    s += `<line class="fade" x1="${pl}" x2="${w - pr + 4}" y1="${Y(o.tot)}" y2="${Y(o.tot)}" stroke="#18301F" stroke-width="1.4" stroke-dasharray="2 3"/>` + pilula(w - pr + 6, Y(o.tot), pr - 8, 'total ' + nf(o.tot, 0));
-    // realizado (área + linha)
-    const pR = R.map((v, i) => v == null ? null : [X(i), Y(v)]).filter(Boolean), path = L => L.map((p, i) => (i ? 'L' : 'M') + p[0].toFixed(1) + ' ' + p[1].toFixed(1)).join('');
-    const len = L => L.reduce((a, p, i) => i ? a + Math.hypot(p[0] - L[i - 1][0], p[1] - L[i - 1][1]) : 0, 0);
-    s += `<path class="fade" d="${path(pR)} L${pR[pR.length - 1][0].toFixed(1)} ${Y(0)} L${pR[0][0].toFixed(1)} ${Y(0)} Z" fill="url(#hbG${o.k})"/>`;
-    const pE = E.map((v, i) => [X(i), Y(v)]);
-    s += `<path d="${path(pE)}" fill="none" stroke="#8C9A90" stroke-width="2" stroke-dasharray="6 4" stroke-linejoin="round" class="fade"/>`;
-    s += `<path d="${path(pR)}" fill="none" stroke="${OPCOR[o.k]}" stroke-width="2.8" stroke-linejoin="round" stroke-linecap="round" class="linha" style="--len:${Math.ceil(len(pR)) + 4}"/>`;
-    // projeção no ritmo das últimas 4 semanas
-    if (x.prev && x.falta > 0) { const ip = iD(x.prev), xe = ip >= 0 ? X(ip) : X(n - 1), ye = ip >= 0 ? Y(o.tot) : Y(o.r + x.ritmo * (n - 1 - ih)); s += `<line class="fade" x1="${X(ih)}" y1="${Y(o.r)}" x2="${xe}" y2="${ye}" stroke="${OPCOR[o.k]}" stroke-width="2" stroke-dasharray="1 5" stroke-linecap="round"/>${ip >= 0 ? `<circle class="fade" cx="${xe}" cy="${ye}" r="4" fill="#fff" stroke="${OPCOR[o.k]}" stroke-width="2"/>` : ''}`; }
-    // hoje
-    s += `<line class="fade" x1="${X(ih)}" x2="${X(ih)}" y1="${pt - 6}" y2="${Hh - pb}" stroke="#18301F" stroke-width="1" opacity=".5"/><circle class="fade" cx="${X(ih)}" cy="${Y(o.r)}" r="5" fill="${OPCOR[o.k]}" stroke="#fff" stroke-width="2"/><circle class="fade" cx="${X(ih)}" cy="${Y(E[ih])}" r="4" fill="#fff" stroke="#8C9A90" stroke-width="2"/>`;
-    s += `<text class="lb fade" x="${X(ih) - 8}" y="${Math.min(Y(o.r), Y(E[ih])) - 10}" text-anchor="end">hoje ${dBR(x.h)}</text>`;
-    // dica por semana
-    for (let i = 0; i < n; i += 7) {
-      const j = Math.min(n - 1, i + 6), d = dias[j], er = R[j];
-      s += `<rect x="${X(i)}" y="${pt}" width="${Math.max(2, X(j) - X(i) + (j === n - 1 ? 0 : (w - pl - pr) / n))}" height="${Hh - pt - pb}" fill="transparent" data-tip="${esc(`<b>até ${dBRa(d)}</b><br>Esperado: <b>${nf(E[j], 0)} ha</b> (${pc(E[j] / o.tot)})${er != null ? `<br>Realizado: <b>${nf(er, 0)} ha</b> (${pc(er / o.tot)})<br>Diferença: <b>${U.nfs(er - E[j], 0)} ha</b>` : ''}`)}"/>`;
-    }
+  // curva monotônica: suave, sem passar acima/abaixo dos pontos
+  function suave(P) {
+    if (P.length < 2) return P.length ? `M${P[0][0]} ${P[0][1]}` : '';
+    const n = P.length, dx = [], m = [], t = [];
+    for (let i = 0; i < n - 1; i++) { dx[i] = P[i + 1][0] - P[i][0]; m[i] = (P[i + 1][1] - P[i][1]) / dx[i]; }
+    t[0] = m[0]; t[n - 1] = m[n - 2];
+    for (let i = 1; i < n - 1; i++) t[i] = m[i - 1] * m[i] <= 0 ? 0 : 3 * (dx[i - 1] + dx[i]) / ((2 * dx[i] + dx[i - 1]) / m[i - 1] + (dx[i] + 2 * dx[i - 1]) / m[i]);
+    let d = `M${P[0][0].toFixed(1)} ${P[0][1].toFixed(1)}`;
+    for (let i = 0; i < n - 1; i++) { const h = dx[i] / 3; d += ` C${(P[i][0] + h).toFixed(1)} ${(P[i][1] + h * t[i]).toFixed(1)} ${(P[i + 1][0] - h).toFixed(1)} ${(P[i + 1][1] - h * t[i + 1]).toFixed(1)} ${P[i + 1][0].toFixed(1)} ${P[i + 1][1].toFixed(1)}`; }
+    return d;
+  }
+  /** Curva acumulada por mês: realizado (linha cheia + área) × esperado (tracejada); faixa clara = meses ainda previstos. */
+  function curvaA(el, o) {
+    const { nf, pc, esc, nfs, W, passoBom } = U, h = hojeH(), hm = h.slice(0, 7), c = OPCOR[o.k] || '#1F4D2B';
+    const ds = [...Object.keys(o.esp), ...Object.keys(o.real), h].sort(); const M = [];
+    let [y, m] = ds[0].slice(0, 7).split('-').map(Number); const ult = ds[ds.length - 1].slice(0, 7);
+    while (true) { const k = `${y}-${String(m).padStart(2, '0')}`; M.push(k); if (k >= ult) break; if (++m > 12) { m = 1; y++; } }
+    const S = M.map(k => { const ate = k === hm ? h : fimMes(k); return { m: k, e: acum(o.esp, ate), r: k <= hm ? acum(o.real, ate) : null }; });
+    const w = W(el), estreito = w < 560, Hh = estreito ? 260 : 300, pl = estreito ? 46 : 58, pr = estreito ? 12 : 128, pt = 24, pb = 34, n = M.length, ih = Math.max(0, M.indexOf(hm));
+    const top = Math.max(o.tot, ...S.map(p => p.e)), passo = passoBom(top / 4), mx = top * 1.08;
+    const X = i => pl + i * (w - pl - pr) / Math.max(1, n - 1), Y = v => pt + (Hh - pt - pb) * (1 - v / mx);
+    let s = `<svg viewBox="0 0 ${w} ${Hh}" width="${w}" height="${Hh}" role="img" aria-label="Esperado × realizado acumulado · ${esc(o.nome)}"><defs><linearGradient id="hbA${o.k}" x1="0" x2="0" y1="0" y2="1"><stop offset="0" stop-color="${c}" stop-opacity=".28"/><stop offset="1" stop-color="${c}" stop-opacity="0"/></linearGradient></defs>`;
+    for (let v = 0; v <= top + 1e-9; v += passo) s += `<line x1="${pl}" x2="${w - pr}" y1="${Y(v)}" y2="${Y(v)}" stroke="#EEF1EC"/><text x="${pl - 8}" y="${Y(v) + 4}" text-anchor="end">${nf(v, 0)}</text>`;
+    const pX = Math.max(1, Math.ceil(n / Math.floor((w - pl - pr) / 44)));
+    S.forEach((p, i) => { if (i === ih || ((i % pX === 0 || i === n - 1) && Math.abs(X(i) - X(ih)) > 34)) s += `<text x="${X(i)}" y="${Hh - 10}" text-anchor="middle"${i === ih ? ' style="fill:#18301F;font-weight:800"' : ''}>${mLabel(p.m)}</text>`; });
+    if (ih < n - 1) s += `<rect class="fade" x="${X(ih)}" y="${pt}" width="${X(n - 1) - X(ih)}" height="${Hh - pt - pb}" fill="#F4F7F2"/>${estreito ? '' : `<text class="fade" x="${X(ih) + 8}" y="${pt + 14}" style="font-weight:700">previsto</text>`}`;
+    s += `<line class="fade" x1="${pl}" x2="${w - pr}" y1="${Y(o.tot)}" y2="${Y(o.tot)}" stroke="#18301F" stroke-opacity=".35" stroke-dasharray="2 4"/><text class="fade" x="${pl + 6}" y="${Y(o.tot) - 6}">área total ${nf(o.tot, 0)} ha</text>`;
+    const pE = S.map((p, i) => [X(i), Y(p.e)]), pR = S.filter(p => p.r != null).map((p, i) => [X(i), Y(p.r)]);
+    if (pR.length > 1) s += `<path class="fade" d="${suave(pR)} L${pR[pR.length - 1][0].toFixed(1)} ${Y(0)} L${pR[0][0].toFixed(1)} ${Y(0)} Z" fill="url(#hbA${o.k})"/>`;
+    s += `<path class="hb-in" d="${suave(pE)}" fill="none" stroke="#9AA59D" stroke-width="2.2" stroke-dasharray="7 5" stroke-linecap="round"/>`;
+    if (pR.length > 1) s += `<path class="hb-draw" pathLength="1" d="${suave(pR)}" fill="none" stroke="${c}" stroke-width="3.4" stroke-linecap="round" stroke-linejoin="round"/>`;
+    pR.forEach((q, i) => s += `<circle class="hb-in" cx="${q[0].toFixed(1)}" cy="${q[1].toFixed(1)}" r="${i === pR.length - 1 ? 6 : 3.6}" fill="${i === pR.length - 1 ? c : '#fff'}" stroke="${c}" stroke-width="2.4" style="--i:${i}"/>`);
+    const eh = S[ih].e, rh = S[ih].r ?? 0;
+    s += `<circle class="hb-in" cx="${X(ih)}" cy="${Y(eh)}" r="5" fill="#fff" stroke="#9AA59D" stroke-width="2.4"/>`;
+    const pil = (yy, txt, cor) => { const pw = txt.length * 6.6 + 20, x0 = estreito ? X(ih) - 12 - pw : X(ih) + 12; return `<g class="hb-in"><rect x="${x0}" y="${yy - 12}" width="${pw}" height="24" rx="12" fill="${cor}"/><text x="${x0 + pw / 2}" y="${yy + 4}" text-anchor="middle" style="fill:#fff;font-weight:800;font-size:11px">${txt}</text></g>`; };
+    let yr = Y(rh), ye = Y(eh); if (estreito) { ye = Math.min(ye, yr) - 30; yr = ye + 28; } else if (Math.abs(yr - ye) < 28) { const md = (yr + ye) / 2, up = yr > ye; yr = md + (up ? 14 : -14); ye = md + (up ? -14 : 14); }
+    s += pil(ye, `esperado ${nf(eh, 0)}`, '#8C9A90') + pil(yr, `realizado ${nf(rh, 0)}`, c);
+    if (ih < n - 1 && !estreito) s += `<text class="fade" x="${w - pr + 8}" y="${Y(S[n - 1].e) + 4}">fim ${nf(S[n - 1].e, 0)}</text>`;
+    // dica por mês
+    const cw = (w - pl - pr) / Math.max(1, n - 1);
+    S.forEach((p, i) => s += `<rect x="${X(i) - cw / 2}" y="${pt}" width="${cw}" height="${Hh - pt - pb}" fill="transparent" data-tip="${esc(`<b>${mLabel(p.m)}${p.m.slice(5) !== '01' ? '/' + p.m.slice(0, 4) : ''}</b>${i === ih ? ' · até hoje' : ''}<br>Esperado: <b>${nf(p.e, 0)} ha</b> (${pc(p.e / o.tot)})${p.r != null ? `<br>Realizado: <b>${nf(p.r, 0)} ha</b> (${pc(p.r / o.tot)})<br>Diferença: <b>${nfs(p.r - p.e, 0)} ha</b>` : ''}`)}"/>`);
     el.innerHTML = s + '</svg>';
+    return { eh, rh };
   }
-  function pHerb() {
-    const { nf, pc, esc, dBR, dBRa, cascata } = U, el = $('#hbOps');
-    if (!H || !H.ops) { el.innerHTML = '<div class="ft-vazio" style="grid-column:1/-1">Ainda não há dados da Matriz de Herbicida publicados. Use “Sincronizar”.</div>'; $('#hbFila').innerHTML = ''; pOS(); return; }
+  /** soGrafico: troca de operação nos botões → redesenha só o cartão (fila e OS ficam como estão) */
+  function pHerb(soGrafico) {
+    const { nf, pc, esc, dBRa, nfs } = U, el = $('#hbOps');
+    if (!H || !H.ops) { el.innerHTML = '<div class="ft-vazio">Ainda não há dados da Matriz de Herbicida publicados. Use “Sincronizar”.</div>'; $('#hbFila').innerHTML = ''; pOS(); return; }
     $('#hbData').textContent = `posição de ${dBRa(hojeH())} · Matriz FO.SA.23`;
-    const ks = ['2007', '2242'].filter(k => H.ops[k]);
-    el.innerHTML = ks.map((k, i) => {
-      const o = { ...H.ops[k], k }, x = situacao(o), st = x.ad == null ? 'nd' : x.ad >= .97 ? 'ok' : x.ad >= .9 ? 'warn' : 'bad';
-      const dif = o.r - x.esp;
-      return `<article class="card hb-op" style="--i:${i};--c:${OPCOR[k]}"><header class="hb-op__h"><span class="hb-cod">${k}</span><div><h3>${esc(o.nome)}</h3><small>${nf(o.n)} talhões · ${nf(o.fin)} com OS finalizada</small></div><span class="ft-tag ${st}" title="realizado ÷ esperado até hoje">aderência ${pc(x.ad)}</span></header>
-        <div class="hb-nums">
-          <div><small>Área total</small><b>${nf(o.tot, 0)}<em>ha</em></b><span>${o.semData ? nf(o.semData, 0) + ' ha sem data planejada' : 'planejada na safra'}</span></div>
-          <div><small>Esperado até hoje</small><b>${nf(x.esp, 0)}<em>ha</em></b><span>${pc(x.esp / o.tot)} da área total</span></div>
-          <div class="is-r"><small>Realizado (apontado)</small><b>${nf(o.r, 0)}<em>ha</em></b><span>${pc(o.r / o.tot)} da área · <b class="${dif < 0 ? 'neg' : 'pos'}">${U.nfs(dif, 0)} ha</b> do esperado</span></div>
-          <div><small>Saldo a realizar</small><b>${nf(x.falta, 0)}<em>ha</em></b><span>${nf(o.aa, 0)} ha liberados para aplicar</span></div>
-        </div>
-        <div class="ft-chart hb-ch" id="hbCh${k}"></div>
-        <footer class="hb-leg"><span><i class="l-r"></i>Realizado</span><span><i class="l-e"></i>Esperado (data planejada)</span><span><i class="l-p"></i>Projeção no ritmo de 4 semanas</span><span class="hb-prev">${x.falta <= 0 ? 'Concluída' : x.prev ? `ritmo ${nf(x.ritmo, 0)} ha/dia → conclui em <b>${dBRa(x.prev)}</b>${x.fimPlano ? ` · plano ${dBRa(x.fimPlano)}` : ''}` : 'sem apontamento nas últimas 4 semanas'}</span></footer></article>`;
-    }).join('');
-    cascata(el);
-    ks.forEach(k => curvaS($('#hbCh' + k), { ...H.ops[k], k }, situacao({ ...H.ops[k], k })));
-    pFila(); pOS();
+    const L = herbOps(); if (!L.some(o => o.k === S.hbOp)) S.hbOp = 'todas';
+    const o = L.find(x => x.k === S.hbOp), c = OPCOR[o.k];
+    el.innerHTML = `<article class="card hb-card" style="--c:${c}">
+      <div class="hb-chips" role="tablist" aria-label="Operação">${L.map(x => `<button type="button" role="tab" aria-selected="${x.k === o.k}" class="hb-opc${x.k === o.k ? ' is-on' : ''}" data-k="${x.k}" style="--c:${OPCOR[x.k]}">${x.k === 'todas' ? '<i class="fa-solid fa-layer-group"></i>' : `<b>${x.k}</b>`}${esc(x.curto)}</button>`).join('')}</div>
+      <div class="hb-nums" id="hbNums"></div>
+      <div class="hb-leg2"><span><i></i>Realizado acumulado</span><span><i class="e"></i>Esperado acumulado</span></div>
+      <div class="ft-chart hb-ch" id="hbCh"></div>
+      <footer class="hb-rod" id="hbRod"></footer></article>`;
+    const x = curvaA($('#hbCh'), o), ad = x.eh ? o.r / x.eh : null, st = ad == null ? '' : ad >= .97 ? 'ok' : ad >= .85 ? 'warn' : 'bad', dif = o.r - x.eh;
+    $('#hbNums').innerHTML = `
+      <div><small>Área total</small><b>${nf(o.tot, 0)}<em>ha</em></b><span>${o.k === 'todas' ? `${L.length - 1} operações somadas` : o.semData ? nf(o.semData, 0) + ' ha sem data planejada' : nf(o.n) + ' talhões'}</span></div>
+      <div><small>Esperado até hoje</small><b>${nf(x.eh, 0)}<em>ha</em></b><span>${pc(x.eh / o.tot)} da área total</span></div>
+      <div class="is-r"><small>Realizado (apontado)</small><b>${nf(o.r, 0)}<em>ha</em></b><span>${pc(o.r / o.tot)} da área total</span></div>
+      <div><small>Saldo a realizar</small><b>${nf(Math.max(0, o.tot - o.r), 0)}<em>ha</em></b><span>${nf(o.aa, 0)} ha liberados para aplicar</span></div>`;
+    $('#hbRod').innerHTML = `<b>${pc(o.r / o.tot)}</b> da área realizada · aderência <span class="ft-tag ${st}" title="realizado ÷ esperado até hoje">${pc(ad)}</span> · <b class="${dif < 0 ? 'neg' : 'pos'}">${nfs(dif, 0)} ha</b> contra o esperado${o.k === 'todas' ? '<small>soma das operações da matriz: o que tinha que ser feito até hoje × o que foi feito</small>' : ''}`;
+    if (!soGrafico) { pFila(); pOS(); }
   }
   /** Fila das próximas aplicações (aba Resumo): uma coluna por frente, na ordem da sequência. */
   function pFila() {
@@ -372,6 +382,7 @@ window.Pulverizacao = (function () {
   /* ---------- montagem ---------- */
   function ligar() {
     if (ligado) return; ligado = true;
+    $('#hbOps').onclick = e => { const b = e.target.closest('.hb-opc'); if (b && b.dataset.k !== S.hbOp) { S.hbOp = b.dataset.k; pHerb(true); } };
     $('#osVer').onclick = e => { const b = e.target.closest('button'); if (b) { S.osVer = b.dataset.v; S.osMais = false; pOS(); } };
     $('#osOps').onclick = e => { const b = e.target.closest('.os-op'); if (b) { S.osOp = S.osOp === b.dataset.op ? null : b.dataset.op; pOS(); } };
     $('#osTab').onclick = e => { if (e.target.closest('[data-osmais]')) { S.osMais = true; pOS(); return; } const r = e.target.closest('tr.os-tr'); if (r) { S.osAb = S.osAb === r.dataset.os ? null : r.dataset.os; pOS(); } };
@@ -382,7 +393,7 @@ window.Pulverizacao = (function () {
       n.querySelector('select').onchange = e => irReg(e.target.value);
       n.onclick = e => { const b = e.target.closest('button[data-n]'); if (!b) return; const L = regs(), k = regAtual().k, i = L.findIndex(r => r.k === k) + +b.dataset.n; if (L[i]) irReg(L[i].k); };
     });
-    let tm; addEventListener('resize', () => { clearTimeout(tm); tm = setTimeout(() => { if (D && visivel()) { pProd(); pQual(); pHerb(); } }, 220); });
+    let tm; addEventListener('resize', () => { clearTimeout(tm); tm = setTimeout(() => { if (D && visivel()) { pProd(); pQual(); if (H && H.ops) pHerb(true); } }, 220); });
   }
   const visivel = () => { const pg = $('.page[data-p="pulv"]'); return pg && pg.classList.contains('is-on'); };
   function montar() {
@@ -392,7 +403,7 @@ window.Pulverizacao = (function () {
     const tP = TURNOS.filter(t => D.producao.some(p => p.t === t)), tQ = TURNOS.filter(t => D.qualidade.some(q => q.turno === t));
     const padP = () => ({ de: dP[0], ate: dP[dP.length - 1], t: 'todos', eq: 'todos' });
     const padQ = () => ({ de: U.addD(dQ[dQ.length - 1], -29), ate: dQ[dQ.length - 1], t: 'todos', eq: 'todos' });
-    if (!S) S = { p: padP(), q: padQ(), filaAberta: null, osVer: 'abertas', osOp: null, osAb: null, osMais: false };
+    if (!S) S = { p: padP(), q: padQ(), hbOp: 'todas', filaAberta: null, osVer: 'abertas', osOp: null, osAb: null, osMais: false };
     S.fbP = filtro($('#pzFbProd'), S.p, { turnos: tP, frotas: eqP, min: dP[0], max: dP[dP.length - 1], padrao: padP, cb: pProd });
     S.fbQ = filtro($('#pzFbQual'), S.q, { turnos: tQ, frotas: eqQ, min: dQ[0], max: dQ[dQ.length - 1], padrao: padQ, cb: pQual });
     ligar();

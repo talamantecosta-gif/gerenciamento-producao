@@ -83,28 +83,38 @@
 @media (max-width: 760px) { .section__head .pz-sub { display: none; } .section__head .pz-reg { margin-left: auto; } }
 
 /* ===== Planejamento de herbicidas (prefixo hb-) ===== */
-.hb-ops { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; }
-.hb-op { display: flex; flex-direction: column; gap: 12px; min-width: 0; animation: ftEntra .5s var(--ease-ft) both; animation-delay: calc(var(--i) * 90ms); position: relative; overflow: hidden; }
-.hb-op::before { content: ''; position: absolute; left: 0; top: 0; right: 0; height: 4px; background: var(--c); }
-.hb-op__h { display: flex; align-items: center; gap: 12px; }
-.hb-op__h h3 { margin: 0; font-size: 15px; color: var(--ink); }
-.hb-op__h small { font-size: 11.5px; color: var(--muted); }
-.hb-op__h .ft-tag { margin-left: auto; white-space: nowrap; }
-.hb-cod { display: inline-flex; align-items: center; justify-content: center; height: 34px; padding: 0 10px; border-radius: 10px; background: var(--c); color: #fff; font-weight: 800; font-size: 15px; letter-spacing: .02em; font-variant-numeric: tabular-nums; }
+.hb-card { display: flex; flex-direction: column; gap: 12px; position: relative; overflow: hidden; animation: ftEntra .5s var(--ease-ft) both; }
+.hb-card::before { content: ''; position: absolute; left: 0; top: 0; right: 0; height: 4px; background: var(--c); transition: background .4s; }
+.hb-chips { display: flex; flex-wrap: wrap; gap: 6px; }
+.hb-opc { all: unset; cursor: pointer; display: inline-flex; align-items: center; gap: 7px; padding: 5px 12px 5px 5px; border-radius: 999px; border: 1px solid var(--line); background: #fff; font-size: 12.5px; font-weight: 600; color: var(--text); transition: background .25s, color .25s, border-color .25s, transform .2s; }
+.hb-opc b { background: var(--c); color: #fff; border-radius: 999px; padding: 2px 8px; font-size: 11px; font-weight: 800; font-variant-numeric: tabular-nums; transition: background .25s; }
+.hb-opc > i { width: 24px; height: 20px; display: inline-flex; align-items: center; justify-content: center; border-radius: 999px; background: var(--c); color: #fff; font-size: 10.5px; }
+.hb-opc:hover { border-color: var(--c); transform: translateY(-1px); }
+.hb-opc.is-on { background: var(--c); border-color: var(--c); color: #fff; }
+.hb-opc.is-on b, .hb-opc.is-on > i { background: rgba(255, 255, 255, .22); }
+.hb-opc:focus-visible { outline: 2px solid var(--folha, #3C7A35); outline-offset: 2px; }
 .hb-nums { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 1px; background: var(--line); border: 1px solid var(--line); border-radius: 14px; overflow: hidden; }
-.hb-nums > div { background: #fff; padding: 10px 12px; display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.hb-nums > div { background: #fff; padding: 10px 14px; display: flex; flex-direction: column; gap: 2px; min-width: 0; animation: ftEntra .45s var(--ease-ft) both; }
+.hb-nums > div:nth-child(2) { animation-delay: 50ms; } .hb-nums > div:nth-child(3) { animation-delay: 100ms; } .hb-nums > div:nth-child(4) { animation-delay: 150ms; }
 .hb-nums > div.is-r { background: #F3F8F1; }
 .hb-nums small { font-size: 10.5px; font-weight: 800; text-transform: uppercase; letter-spacing: .05em; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .hb-nums b { font-size: 24px; font-weight: 800; font-stretch: 85%; color: var(--ink); line-height: 1.1; font-variant-numeric: tabular-nums; }
 .hb-nums b em { font-style: normal; font-size: 12px; color: var(--muted); margin-left: 3px; font-weight: 700; }
 .hb-nums span { font-size: 11.5px; color: var(--muted); line-height: 1.3; }
-.hb-nums span b { font-size: 11.5px; font-stretch: 100%; } .hb-nums .neg { color: var(--bad); } .hb-nums .pos { color: var(--ok); }
-.hb-ch { min-height: 270px; }
-.hb-leg { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 16px; font-size: 11.5px; color: var(--muted); border-top: 1px solid var(--hair, #F0F2EE); padding-top: 10px; }
-.hb-leg i { display: inline-block; width: 18px; height: 0; vertical-align: middle; margin-right: 6px; border-top: 3px solid var(--c); }
-.hb-leg i.l-e { border-top: 2px dashed #8C9A90; } .hb-leg i.l-p { border-top: 2px dotted var(--c); }
-.hb-prev { margin-left: auto; color: var(--ink); } .hb-prev b { color: var(--ink); }
+.hb-leg2 { display: flex; gap: 18px; font-size: 11.5px; color: var(--muted); margin-bottom: -6px; }
+.hb-leg2 i { display: inline-block; width: 20px; vertical-align: middle; margin-right: 6px; border-top: 3px solid var(--c); }
+.hb-leg2 i.e { border-top: 2px dashed #9AA59D; }
+.hb-ch { min-height: 300px; }
+.hb-ch svg text { font-size: 11px; fill: #6E7C72; }
+.hb-draw { stroke-dasharray: 1; stroke-dashoffset: 1; animation: hbDraw 1.3s cubic-bezier(.2, .7, .2, 1) forwards; }
+@keyframes hbDraw { to { stroke-dashoffset: 0; } }
+.hb-in { animation: hbIn .6s ease both; animation-delay: .55s; }
+@keyframes hbIn { from { opacity: 0; } }
+.hb-rod { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; font-size: 12.5px; color: var(--text); border-top: 1px solid #F0F2EE; padding-top: 10px; }
+.hb-rod b { color: var(--ink); } .hb-rod .neg { color: var(--bad); } .hb-rod .pos { color: var(--ok); }
+.hb-rod small { flex-basis: 100%; font-size: 11px; color: var(--muted); }
 .hb-sub { margin-top: 22px; }
+@media (prefers-reduced-motion: reduce) { .hb-draw { animation: none; stroke-dasharray: none; } .hb-in, .hb-card, .hb-nums > div { animation: none; } }
 
 /* fila por frente */
 .hb-frs { display: grid; grid-template-columns: repeat(auto-fit, minmax(270px, 1fr)); gap: 14px; align-items: start; }
@@ -134,12 +144,12 @@
 .hb-mais:hover { text-decoration: underline; }
 .hb-mais:focus-visible { outline: 2px solid var(--folha, #3C7A35); outline-offset: 2px; border-radius: 6px; }
 
-@media (max-width: 1180px) { .hb-ops { grid-template-columns: minmax(0, 1fr); } }
 @media (max-width: 760px) {
   .hb-nums { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .hb-nums b { font-size: 21px; }
-  .hb-op__h { flex-wrap: wrap; } .hb-op__h .ft-tag { margin-left: 0; }
-  .hb-prev { margin-left: 0; width: 100%; }
+  .hb-ch { min-height: 260px; }
+  .hb-chips { flex-wrap: nowrap; overflow-x: auto; padding-bottom: 4px; scrollbar-width: none; }
+  .hb-opc { flex: none; }
 }
 
 /* ===== Ordens de serviço (Matriz) — prefixo os- ===== */

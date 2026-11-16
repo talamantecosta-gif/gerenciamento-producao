@@ -1,7 +1,7 @@
 /* =========================================================================
    Leitura da "FO.SA.23 - Matriz de Herbicida" → herbicida.json
    Abas usadas (só elas são lidas):
-   - "I - Locais de produção 2007": por talhão, área planejada (P), a realizar (A),
+   - "I - Locais de produção 2007" (+ "II - Quebra-Lombo 2136" e "III - Dessecação 2041"): por talhão, área planejada (P), a realizar (A),
      disponível (AA), realizada (R), data planejada (DP) e data realizada (DR) de cada operação.
    - "Resumo": fila de aplicação por frente (seq., operação, fazenda, talhões, área, entrada/saída)
      e a legenda frente → equipamento.
@@ -12,14 +12,16 @@
      "Herbicidas Cadastrados" e "Depara Cod Insumo" (código → nome do produto); recursos da OS
      (calda pronta, autopropelido, trator…) pelos códigos curtos da aba "Qualificadores".
    O código do responsável da OS não é publicado.
-   Saída enxuta: totais e áreas por dia (esperado × realizado) das operações 2007 e 2242,
+   Saída enxuta: totais e áreas por dia (esperado × realizado) de cada operação,
    e a fila das próximas aplicações. Nenhum nome de pessoa.
    window.HerbPlanilha = { ler(XLSX, buf), mesclar(anterior, novo), VERSAO, OPS }
    ========================================================================= */
 (function (root) {
   'use strict';
-  const VERSAO = 1;
-  const OPS = { '2007': '1ª aplicação de herbicida', '2242': '1ª bordadura' };
+  const VERSAO = 2;
+  // operações acompanhadas: código → nome e aba de onde vêm (as demais abas da matriz seguem o mesmo padrão de colunas)
+  const OPS = { '2007': '1ª aplicação de herbicida', '2242': '1ª bordadura', '2111': 'Catação química', '2260': '2ª bordadura', '2201': '2ª aplicação de herbicida', '2175': 'Extensor de residual', '2075': 'Inseticida pingente', '2041': 'Dessecação', '2136': 'Quebra-lombo' };
+  const ABA_OP = { '2041': /^iii - dessecacao/, '2136': /^ii - quebra-lombo/ };
   const NOMES_OP = { '2007': '1ª Aplic. de Herbicida', '2242': '1ª Bordadura', '2201': '2ª Aplic. de Herbicida', '2111': 'Catação Química', '2260': '2ª Bordadura', '2175': '2ª Aplic. Herbicida (Pingente)', '2075': 'Aplic. Inseticida Pingente', '2041': 'Dessecação', '2136': 'Quebra-Lombo', '2220': 'Catação Química (cód. antigo)' };
   const semAc = s => String(s ?? '').normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase().replace(/\s+/g, ' ').trim();
   const vazio = v => v == null || (typeof v === 'string' && !v.trim());
@@ -32,12 +34,12 @@
   const r1 = v => Math.round(v * 100) / 100;
   const addD = (d, n) => { const t = new Date(d + 'T12:00:00Z'); t.setUTCDate(t.getUTCDate() + n); return t.toISOString().slice(0, 10); };
 
-  function matriz(XLSX, ws) {
-    const R = linhas(XLSX, ws), hi = R.findIndex(r => r && r.some(c => semAc(c) === 'fazenda') && r.some(c => String(c ?? '').trim() === '2007'));
-    if (hi < 0) throw new Error('Não encontrei o cabeçalho da aba "I - Locais de produção 2007".');
+  function matriz(XLSX, ws, lista) {
+    const R = linhas(XLSX, ws), hi = R.findIndex(r => r && r.some(c => semAc(c) === 'fazenda') && r.some(c => lista.includes(String(c ?? '').trim())));
+    if (hi < 0) throw new Error('Não encontrei o cabeçalho das operações na aba de locais de produção.');
     const H = R[hi].map(c => String(c ?? '').trim()), col = n => H.indexOf(n), cFaz = H.findIndex(h => semAc(h) === 'fazenda');
     const out = {};
-    for (const op of Object.keys(OPS)) {
+    for (const op of lista) {
       const c = { flag: col(op), P: col(op + 'P'), A: col(op + 'A'), AA: col(op + 'AA'), R: col(op + 'R'), DP: col(op + 'DP'), DR: col(op + 'DR'), OSS: col(op + 'OSS') };
       if (c.flag < 0 || c.R < 0) continue;
       const o = { nome: OPS[op], tot: 0, r: 0, a: 0, aa: 0, n: 0, fin: 0, semData: 0, esp: {}, real: {} };
@@ -55,7 +57,6 @@
       ['esp', 'real'].forEach(k => Object.keys(o[k]).forEach(d => o[k][d] = r1(o[k][d])));
       out[op] = o;
     }
-    if (!Object.keys(out).length) throw new Error('A aba "I - Locais de produção 2007" não tem as colunas das operações 2007/2242.');
     return out;
   }
 
@@ -132,9 +133,12 @@
   }
 
   function ler(XLSX, buf) {
-    const wb = XLSX.read(buf, { type: 'array', cellDates: false, sheets: ['I - Locais de produção 2007', 'Resumo', 'O.S', 'Apontamento 2026', 'Operações Pivot', 'Insumos - PIMS', 'Herbicidas Cadastrados', 'Depara Cod Insumo', 'Qualificadores'] });
+    const wb = XLSX.read(buf, { type: 'array', cellDates: false, sheets: ['I - Locais de produção 2007', 'II - Quebra-Lombo 2136', 'III - Dessecação 2041', 'Resumo', 'O.S', 'Apontamento 2026', 'Operações Pivot', 'Insumos - PIMS', 'Herbicidas Cadastrados', 'Depara Cod Insumo', 'Qualificadores'] });
     const wm = aba(wb, /^i - locais de producao/); if (!wm) throw new Error('Não encontrei a aba "I - Locais de produção 2007".');
-    const ops = matriz(XLSX, wm), q = fila(XLSX, aba(wb, /^resumo$/));
+    const ops = matriz(XLSX, wm, Object.keys(OPS).filter(k => !ABA_OP[k]));
+    const q = fila(XLSX, aba(wb, /^resumo$/));
+    if (!ops['2007']) throw new Error('A aba "I - Locais de produção 2007" não tem as colunas da operação 2007.');
+    Object.entries(ABA_OP).forEach(([k, rx]) => { const w = aba(wb, rx); if (w) try { Object.assign(ops, matriz(XLSX, w, [k])); } catch (e) { /* aba fora do padrão: operação fica de fora */ } });
     return { versao: VERSAO, gerado: new Date().toISOString(), ops, fila: q.fila, frentes: q.frentes, os: ordens(XLSX, wb) };
   }
   /** A matriz já traz a safra inteira: o arquivo novo substitui o anterior. */
