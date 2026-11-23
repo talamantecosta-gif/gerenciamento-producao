@@ -8,6 +8,8 @@
        - "Pulverizadores.xlsx" (nome com Pulveriza) → pulverizacao.json
          (correções da planilha refeitas a cada sincronização);
        - "relatorio-ciclo-operacao.xlsx" (TRAVICAR, aplicação aérea) → aviacao.json
+       - "FO.SA.21 - Protocolo de Entrega de OS" → osaerea.json (OS aéreas abertas, na página Aviação;
+         só as abas Ordem de servico, Fazendas e Pagina 1 — sem fornecedores, CPF ou nomes)
          (trabalhos acumulados: o histórico fica mesmo que saia do período exportado);
        - "FO.SA.23 - Matriz de Herbicida" → herbicida.json (esperado × realizado das
          operações 2007/2242, fila por frente e ordens de serviço, na página Pulverização);
@@ -29,6 +31,7 @@ window.Sincronizar = (function () {
     { tipo: 'fert', rx: /(acompanhamento|fertirriga).*\.xls[xm]$/i, nome: 'Fertirrigação' },
     { tipo: 'pulv', rx: /pulveriza.*\.xls[xm]$/i, nome: 'Pulverização' },
     { tipo: 'avi', rx: /(ciclo.*opera|travicar).*\.xls[xm]?$/i, nome: 'Aviação (TRAVICAR)' },
+    { tipo: 'osa', rx: /(protocolo.*entrega|fo\.?\s*sa\.?\s*21).*\.xls[xm]?$/i, nome: 'OS aéreas (FO.SA.21)' },
     { tipo: 'abast', rx: /abastec.*\.xls[xm]?$/i, nome: 'Abastecimentos (fertirrigação)' },
     { tipo: 'prep', rx: /informativo.*opera.*\.xls[xm]?$/i, nome: 'Preparo de Solo (Informativo Operacional)' },
     { tipo: 'herb', rx: /(matriz.*herbicida|fo\.?\s*sa\.?\s*23).*\.xls[xmb]?$/i, nome: 'Matriz de Herbicida' },
@@ -80,6 +83,7 @@ window.Sincronizar = (function () {
     pulv: n => n.some(x => /ioa\s*pulve/i.test(x)) && n.some(x => /^tabelas$/i.test(x.trim())),
     avi: n => n.some(x => /trabalho/i.test(x)),
     prep: n => n.some(x => /^form1$/i.test(x.trim())),
+    osa: n => n.some(x => /^ordem de servi/i.test(x.trim())) && n.some(x => /^fazendas$/i.test(x.trim())),
     herb: n => n.some(x => /^i\s*-\s*locais de produ/i.test(x.trim())) && n.some(x => /^resumo$/i.test(x.trim())),
     abast: () => true, usuarios: () => true,
   };
@@ -337,6 +341,22 @@ window.Sincronizar = (function () {
           log(`Preparo de Solo: ${final.registros.length} apontamentos até ${ult}${cr.repetidos ? ` · ${cr.repetidos} repetido(s) unificado(s)` : ''}${final.conferir.length ? ` · ${final.conferir.length} para conferir` : ''}.`, 'ok');
         }
       });
+      // OS aéreas (FO.SA.21 · protocolo de entrega de OS) → página Aviação
+      if (achados.osa && window.OsAereaPlanilha) await etapa('OS aéreas', async () => {
+        const AO = 'osaerea.json', f = achados.osa.f, sig = `${f.name}|${f.lastModified}|${OsAereaPlanilha.VERSAO}|${window.AviOS ? AviOS.VERSAO : 0}`;
+        let anterior = null;
+        if (c && c.token) { try { const b = await lerRepoBruto(c, AO); anterior = b ? (await Acesso.readJson(b)).data : null; } catch (e) { if (/token/.test(e.message)) throw e; } }
+        if (!anterior) anterior = (window.AviOS && AviOS.dados) || await (async () => { const b = await lerSite(AO); return b ? (await Acesso.readJson(b)).data : null; })();
+        if (anterior && anterior.fonteSig === sig) semMudanca('OS aéreas', f);
+        else {
+          const X = await carregaXlsx();
+          const novo = OsAereaPlanilha.ler(X, await f.arrayBuffer());
+          const final = OsAereaPlanilha.mesclar(anterior, novo); final.fonte = f.name; final.fonteSig = sig;
+          arquivos.push({ path: AO, content: JSON.stringify(await Acesso.encryptJson(final)), osa: final });
+          const ha = final.os.reduce((a, o) => a + o.ha, 0);
+          log(`OS aéreas: ${final.os.length} OS abertas · ${Math.round(ha).toLocaleString('pt-BR')} ha${final.protocolo ? ` · último protocolo com ${final.protocolo.os.length} OS` : ''}.`, 'ok');
+        }
+      });
       // matriz de herbicida (FO.SA.23) → planejamento de herbicidas e OS na página Pulverização
       if (achados.herb && window.HerbPlanilha) await etapa('Matriz de Herbicida', async () => {
         const AH = 'herbicida.json', f = achados.herb.f, sig = `${f.name}|${f.lastModified}|${HerbPlanilha.VERSAO}|${window.Pulverizacao ? Pulverizacao.VERSAO : 0}`;
@@ -382,10 +402,11 @@ window.Sincronizar = (function () {
       const fert = arquivos.find(a => a.dados); if (fert) Fertirrigacao.definir(fert.dados);
       const pz = arquivos.find(a => a.pulv); if (pz && window.Pulverizacao) Pulverizacao.definir(pz.pulv);
       const av = arquivos.find(a => a.avi); if (av && window.Aviacao) Aviacao.definir(av.avi);
+      const oa = arquivos.find(a => a.osa); if (oa && window.AviOS) AviOS.definir(oa.osa); else if (av && window.AviOS) AviOS.aoEntrar();
       const ab = arquivos.find(a => a.abast); if (ab) Fertirrigacao.definirAbast(ab.abast);
       const pp = arquivos.find(a => a.prep); if (pp && window.Preparo) Preparo.definir(pp.prep);
       const hb = arquivos.find(a => a.herb); if (hb && window.Pulverizacao) Pulverizacao.definirHerb(hb.herb);
-      if ((fert || pz || av || pp || hb) && window.Layout && Layout.animar) Layout.animar(document);
+      if ((fert || pz || av || pp || hb || oa) && window.Layout && Layout.animar) Layout.animar(document);
     } catch (e) {
       if (e && e.name === 'AbortError') log('Sincronização cancelada.');
       else log('Não foi possível sincronizar: ' + esc(e.message || e), 'bad');
