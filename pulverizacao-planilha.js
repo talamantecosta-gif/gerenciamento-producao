@@ -16,7 +16,7 @@
    ========================================================================= */
 (function (root) {
   'use strict';
-  const VERSAO = 2;
+  const VERSAO = 3; // 3: não guarda mais o nome de quem informou (LGPD)
   const META_HA_DIA = 150;          // meta da frente de pulverização (total do dia)
   const TOL_AREA = .10;             // OS: realizado acima de 110% da área → verificar
   const IDADE_MAX = 7;              // OS em aberto há mais de 7 dias → alerta
@@ -104,13 +104,13 @@
       const r = R[i] || []; if (r[0] == null || txt(r[0]) === '') continue;
       frota.push({ frota: txt(r[0]).replace(/^(\w)/, m => m.toUpperCase()), frente: txt(r[1]).toUpperCase() || 'SEM FRENTE', status: STATUS(r[2]), motivo: txt(r[3]) || null });
     }
-    // turno, informante e início das operações (PAINEL GERENCIAL)
-    const inicio = {}; let turno = null, por = null;
+    // turno e início das operações (PAINEL GERENCIAL) · o nome de quem informou (I3) não é lido (LGPD)
+    const inicio = {}; let turno = null;
     if (painel) {
-      turno = txt(cel(painel, 'F3')) || null; por = txt(cel(painel, 'I3')) || null;
+      turno = txt(cel(painel, 'F3')) || null;
       for (let r = 10; r <= 18; r++) { const f = txt(cel(painel, 'B' + r)).toUpperCase(), h = cel(painel, 'I' + r); if (f && h != null && h !== '') { const m = minutos(h); if (m != null) inicio[f] = String(Math.floor(m / 60)).padStart(2, '0') + ':' + String(m % 60).padStart(2, '0'); } }
     }
-    return { turno, informadoPor: por, inicio, frota };
+    return { turno, inicio, frota };
   }
 
   /* ---------- IOA PULVE: produção oficial (ha por frota e turno) ---------- */
@@ -202,16 +202,19 @@
     Object.entries(h.status).forEach(([d, st]) => {
       const k = d + '|' + (st.turno || '-'); if (h.registros[k]) return;
       const nk = Object.keys(h.nivel).filter(x => x.startsWith(d + '|')).sort().pop();
-      h.registros[k] = { data: d, turno: st.turno || null, informadoPor: null, inicio: {}, frota: st.frota || [], nivel: nk ? { data: d, turno: nk.split('|')[1], caminhoes: h.nivel[nk] } : null };
+      h.registros[k] = { data: d, turno: st.turno || null, inicio: {}, frota: st.frota || [], nivel: nk ? { data: d, turno: nk.split('|')[1], caminhoes: h.nivel[nk] } : null };
     });
     if (novo.status && novo.status.data) {
       h.status[novo.status.data] = { turno: novo.status.turno, frota: novo.status.frota };
       h.registros[novo.status.data + '|' + (novo.status.turno || '-')] = {
-        data: novo.status.data, turno: novo.status.turno || null, informadoPor: novo.status.informadoPor || null,
+        data: novo.status.data, turno: novo.status.turno || null,
         inicio: novo.status.inicio || {}, frota: novo.status.frota || [],
         nivel: novo.nivel && novo.nivel.caminhoes && novo.nivel.caminhoes.length ? { data: novo.nivel.data, turno: novo.nivel.turno, caminhoes: novo.nivel.caminhoes } : null,
       };
     }
+    // LGPD: remove o nome de quem informou dos registros já publicados
+    Object.values(h.registros).forEach(r => { delete r.informadoPor; });
+    if (novo.status) delete novo.status.informadoPor;
     if (novo.nivel && novo.nivel.data) h.nivel[novo.nivel.data + '|' + (novo.nivel.turno || '-')] = novo.nivel.caminhoes;
     return { ...novo, historico: h };
   }

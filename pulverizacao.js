@@ -73,7 +73,7 @@ window.Pulverizacao = (function () {
     ].join('');
     cascata(el); animar(el);
     el.onclick = e => { const k = e.target.closest('[data-ir]'); if (k) $('#' + k.dataset.ir).scrollIntoView({ behavior: U.semMov() ? 'auto' : 'smooth', block: 'start' }); };
-    $('#pzPgData').textContent = `Status de ${dBRa(D.status.data)}${D.status.turno ? ' · ' + D.status.turno : ''}${D.status.informadoPor ? ' · informado por ' + D.status.informadoPor : ''}`;
+    $('#pzPgData').textContent = `Status de ${dBRa(D.status.data)}${D.status.turno ? ' · ' + D.status.turno : ''}`;
   }
 
   /* =================== STATUS DA FROTA =================== */
@@ -92,7 +92,7 @@ window.Pulverizacao = (function () {
   function regs() {
     const H = (D.historico && D.historico.registros) || {}, L = { ...H };
     const k = D.status.data + '|' + (D.status.turno || '-');
-    if (!L[k]) L[k] = { data: D.status.data, turno: D.status.turno, informadoPor: D.status.informadoPor, inicio: D.status.inicio || {}, frota: D.status.frota || [], nivel: D.nivel };
+    if (!L[k]) L[k] = { data: D.status.data, turno: D.status.turno, inicio: D.status.inicio || {}, frota: D.status.frota || [], nivel: D.nivel };
     return Object.keys(L).sort().map(k => ({ k, ...L[k] }));
   }
   const regAtual = () => { const L = regs(); return L.find(r => r.k === S.reg) || L[L.length - 1]; };
@@ -112,7 +112,7 @@ window.Pulverizacao = (function () {
   function pCaminhoes() {
     const { nf, pc, esc } = U;
     const R = regAtual(), N = R.nivel, el = $('#pzTanques');
-    $('#pzNivData').textContent = N ? `leitura do turno ${N.turno || '—'}${R.informadoPor ? ' · informado por ' + R.informadoPor : ''}` : '';
+    $('#pzNivData').textContent = N ? `leitura do turno ${N.turno || '—'}` : '';
     if (!N || !N.caminhoes.length) { el.innerHTML = '<div class="ft-vazio">Sem leitura dos caminhões.</div>'; return; }
     el.innerHTML = N.caminhoes.map((c, i) => {
       const p = c.p || 0, cor = { ok: '#2a78d6', warn: '#E0A100', bad: '#C62828' }[c.status] || '#9AA59D';
@@ -135,7 +135,7 @@ window.Pulverizacao = (function () {
     card.innerHTML = `<div class="fc-head"><div class="fc-logo"><img src="logo.png" alt="Bioenergética Aroeira"></div><div class="fc-tt"><h3>Status · Pulverização</h3><p>Defensivos agrícolas · COA Bioenergética Aroeira</p></div><div class="fc-data"><b>${dBRa(R.data)}</b><span>${semana(R.data)}${R.turno ? ' · ' + esc(R.turno) : ''}</span></div></div>
       ${frentesStatus(R.frota).map(g => `<div class="fc-sec"><h4>${esc(g.frente)}${ini[g.frente] ? ' · início ' + ini[g.frente] : ''}</h4><div class="pz-cl">${g.itens.map(x => `<div class="pz-ci ${ST_COR[x.status] || 'nd'}"><span class="pz-dot"></span><b>${esc(x.frota)}</b><span class="pz-ci__s"><em>${esc(x.status)}</em>${x.motivo ? ' · ' + esc(x.motivo.toLowerCase()) : ''}</span></div>`).join('')}</div></div>`).join('')}
       ${N && N.caminhoes.length ? `<div class="fc-sec"><h4>Nível dos caminhões${N.turno ? ' · turno ' + esc(N.turno) : ''}</h4>${N.caminhoes.map(c => `<div class="pz-cn"><b>${esc(c.caminhao)}</b><div class="fc-trk"><i style="--w:${(c.p || 0) * 100}%;background:${{ ok: '#2a78d6', warn: '#E0A100', bad: '#C62828' }[c.status] || '#9AA59D'}"></i></div><span><b>${pc(c.p)}</b> · ${nf(c.litros)} L${c.conteudo ? ' de ' + esc(String(c.conteudo).toLowerCase()) : ''}</span></div>`).join('')}</div>` : ''}
-      <div class="fc-foot"><span>Gerenciamento Produção · ${new Date().toLocaleString('pt-BR', { dateStyle: 'short', timeStyle: 'short' })}${R.informadoPor ? ' · informado por ' + esc(R.informadoPor) : ''}</span><span>© Talamante</span></div>`;
+      <div class="fc-foot"><span>Gerenciamento Produção · ${new Date().toLocaleString('pt-BR', { dateStyle: 'short', timeStyle: 'short' })}</span><span>© Talamante</span></div>`;
   }
   async function imagem() {
     if (!window.html2canvas) { U.toast('Gerador de imagem indisponível — verifique a internet.'); return null; }
