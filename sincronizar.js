@@ -47,17 +47,29 @@ window.Sincronizar = (function () {
   const sigs = { get() { try { return JSON.parse(localStorage.getItem(SIG_KEY) || '{}'); } catch (e) { return {}; } }, set(o) { try { localStorage.setItem(SIG_KEY, JSON.stringify(o)); } catch (e) { /* */ } } };
 
   /* ---------- pastas vinculadas (IndexedDB) ---------- */
-  const idb = (modo, fn) => new Promise((ok, nok) => {
+  // Tudo que depende do navegador tem tempo limite: em alguns computadores o banco local (IndexedDB)
+  // fica travado (perfil corporativo, dados do site bloqueados, outra aba presa) e a sincronização
+  // ficava parada sem mensagem. Agora, se travar, o painel avisa e oferece escolher a pasta/arquivos na hora.
+  const comTempo = (p, ms, erro) => Promise.race([p, new Promise((_, nok) => setTimeout(() => nok(new Error(erro || 'tempo esgotado')), ms))]);
+  let SEM_BANCO = false, MEM = []; // sem banco local: guarda as pastas só enquanto a página está aberta
+  const idb = (modo, fn) => comTempo(new Promise((ok, nok) => {
     const r = indexedDB.open('painel-producao', 1);
-    r.onupgradeneeded = () => r.result.createObjectStore('h');
+    r.onupgradeneeded = () => { if (!r.result.objectStoreNames.contains('h')) r.result.createObjectStore('h'); };
     r.onerror = () => nok(r.error);
-    r.onsuccess = () => { try { const tx = r.result.transaction('h', modo); const q = fn(tx.objectStore('h')); tx.oncomplete = () => ok(q && q.result); tx.onerror = () => nok(tx.error); } catch (e) { nok(e); } };
-  });
-  const lerPastas = async () => { try { const v = await idb('readonly', st => st.get('pastas')); if (Array.isArray(v)) return v; const antiga = await idb('readonly', st => st.get('pasta')); return antiga ? [antiga] : []; } catch (e) { return []; } };
-  const gravarPastas = l => idb('readwrite', st => st.put(l, 'pastas')).catch(() => null);
+    r.onblocked = () => nok(new Error('banco local bloqueado por outra aba do painel'));
+    r.onsuccess = () => { const db = r.result, fecha = () => { try { db.close(); } catch (e) { /* */ } }; try { const tx = db.transaction('h', modo); const q = fn(tx.objectStore('h')); tx.oncomplete = () => { fecha(); ok(q && q.result); }; tx.onerror = () => { fecha(); nok(tx.error); }; } catch (e) { fecha(); nok(e); } };
+  }), 4000, 'o navegador não respondeu ao abrir o banco local');
+  const lerPastas = async () => {
+    if (SEM_BANCO) return MEM.slice();
+    try { const v = await idb('readonly', st => st.get('pastas')); if (Array.isArray(v)) return v; const antiga = await idb('readonly', st => st.get('pasta')); return antiga ? [antiga] : []; }
+    catch (e) { SEM_BANCO = true; console.warn('[Sincronizar] banco local indisponível:', e); return MEM.slice(); }
+  };
+  const gravarPastas = async l => { MEM = l.slice(); if (SEM_BANCO) return null; try { return await idb('readwrite', st => st.put(l, 'pastas')); } catch (e) { SEM_BANCO = true; return null; } };
   const SUPORTA = 'showDirectoryPicker' in window;
-  const temPerm = async h => { try { return (await h.queryPermission({ mode: 'read' })) === 'granted'; } catch (e) { return false; } };
-  const pedirPerm = async h => { try { return (await h.requestPermission({ mode: 'read' })) === 'granted'; } catch (e) { return false; } };
+  const temPerm = async h => { try { return (await comTempo(h.queryPermission({ mode: 'read' }), 3000)) === 'granted'; } catch (e) { return false; } };
+  const pedirPerm = async h => { try { return (await comTempo(h.requestPermission({ mode: 'read' }), 60000)) === 'granted'; } catch (e) { return false; } };
+  /** escolher planilhas soltas (sem pasta): funciona em qualquer navegador */
+  const escolherArquivos = () => new Promise(ok => { const i = document.createElement('input'); i.type = 'file'; i.multiple = true; i.accept = '.xlsm,.xlsx,.xls,.xlsb'; i.onchange = () => ok([...i.files]); i.addEventListener('cancel', () => ok([])); i.click(); });
   async function adicionarPasta() {
     const h = await window.showDirectoryPicker({ id: 'painel-producao', mode: 'read' });
     const l = await lerPastas();
@@ -187,11 +199,14 @@ window.Sincronizar = (function () {
 
   async function pastas() {
     if (!SUPORTA) { modal(`<h3>Pastas</h3><p>Para ler pastas do computador, abra o painel no <b>Google Chrome</b> ou no <b>Microsoft Edge</b> (no computador).</p><div class="ft-modal__acts"><button class="ft-btn" data-fechar>Fechar</button></div>`); return; }
+    modal(`<h3><i class="fa-regular fa-folder-open"></i> Pastas sincronizadas</h3><p>Carregando as pastas vinculadas…</p><div class="ft-modal__acts"><button class="ft-btn" data-fechar>Fechar</button></div>`);
     const l = await lerPastas(), perms = await Promise.all(l.map(temPerm));
     const m = modal(`<h3><i class="fa-regular fa-folder-open"></i> Pastas sincronizadas</h3><p>O painel procura nestas pastas (e numa subpasta abaixo) as planilhas <b>Acompanhamento 2026</b>, <b>Pulverizadores</b>, o relatório da <b>TRAVICAR</b> (relatorio-ciclo-operacao), <b>Abastecimentos</b>, <b>Informativo Operacional Agrícola</b> e <b>Usuários site gerencial</b>. Se o mesmo arquivo estiver em duas pastas, vale o salvo por último.</p>
+      ${SEM_BANCO ? '<p style="background:var(--warn-bg);border-radius:10px;padding:8px 10px;font-size:12.5px"><i class="fa-solid fa-triangle-exclamation"></i> Este navegador não deixou o painel guardar as pastas (dados do site bloqueados ou perfil restrito). A pasta escolhida vale só enquanto esta página estiver aberta — ou use <b>Escolher planilhas</b>.</p>' : ''}
       <div class="ft-pastas">${l.length ? l.map((h, i) => `<div class="ft-pasta"><i class="fa-solid fa-folder"></i><b>${esc(h.name)}</b>${perms[i] ? '<span class="ft-tag ok">liberada</span>' : `<button class="ft-btn" data-lib="${i}">Liberar</button>`}<button class="ft-btn" data-rem="${i}" aria-label="Remover ${esc(h.name)}"><i class="fa-solid fa-trash"></i></button></div>`).join('') : '<div class="ft-vazio">Nenhuma pasta vinculada.</div>'}</div>
-      <div class="ft-modal__acts"><button class="ft-btn" data-fechar>Fechar</button><button class="ft-btn" id="pAdd"><i class="fa-solid fa-folder-plus"></i>Adicionar pasta</button><button class="ft-btn pri" id="pSync"><i class="fa-solid fa-rotate"></i>Sincronizar</button></div>`);
-    m.querySelector('#pAdd').onclick = async () => { try { await adicionarPasta(); } catch (e) { /* cancelou */ } pastas(); };
+      <div class="ft-modal__acts"><button class="ft-btn" data-fechar>Fechar</button><button class="ft-btn" id="pArq"><i class="fa-regular fa-file-excel"></i>Escolher planilhas</button><button class="ft-btn" id="pAdd"><i class="fa-solid fa-folder-plus"></i>Adicionar pasta</button><button class="ft-btn pri" id="pSync"><i class="fa-solid fa-rotate"></i>Sincronizar</button></div>`);
+    m.querySelector('#pAdd').onclick = async () => { try { await adicionarPasta(); } catch (e) { if (e && e.name !== 'AbortError') toast('Não consegui abrir a pasta: ' + (e.message || e)); } pastas(); };
+    m.querySelector('#pArq').onclick = async () => { const fs = await escolherArquivos(); if (fs.length) sincronizar(fs); };
     m.querySelector('#pSync').onclick = () => sincronizar();
     m.querySelectorAll('[data-rem]').forEach(b => b.onclick = async () => { const x = await lerPastas(); x.splice(+b.dataset.rem, 1); await gravarPastas(x); pastas(); });
     m.querySelectorAll('[data-lib]').forEach(b => b.onclick = async () => { await pedirPerm(l[+b.dataset.lib]); pastas(); });
@@ -226,32 +241,45 @@ window.Sincronizar = (function () {
 
   /* ---------- sincronização ---------- */
   let RODANDO = false;
-  async function sincronizar() {
-    if (RODANDO) return; RODANDO = true;
+  async function sincronizar(manuais) {
+    if (!Array.isArray(manuais)) manuais = null; // clique no botão passa um evento
+    if (RODANDO) { const m = $('#syncModal'); if (m && m.hidden) RODANDO = false; else return; } // modal fechado = libera nova tentativa
+    RODANDO = true;
     const btn = $('#btnSync'); if (btn) btn.classList.add('girando');
-    const m = modal(`<h3><i class="fa-solid fa-rotate"></i> Sincronizar</h3><p>Lendo as pastas e publicando o que mudou.</p><div class="ft-modal__log" id="syncLog"></div><div class="ft-modal__acts"><button class="ft-btn" id="sPastas"><i class="fa-regular fa-folder-open"></i>Pastas</button><button class="ft-btn" data-fechar>Fechar</button></div>`);
-    LOG = m.querySelector('#syncLog'); m.querySelector('#sPastas').onclick = () => pastas();
+    const m = modal(`<h3><i class="fa-solid fa-rotate"></i> Sincronizar</h3><p>Lendo as pastas e publicando o que mudou.</p><div class="ft-modal__log" id="syncLog"></div><div class="ft-modal__acts"><button class="ft-btn" id="sArq"><i class="fa-regular fa-file-excel"></i>Escolher planilhas</button><button class="ft-btn" id="sPastas"><i class="fa-regular fa-folder-open"></i>Pastas</button><button class="ft-btn" data-fechar>Fechar</button></div>`);
+    LOG = m.querySelector('#syncLog'); m.querySelector('#sPastas').onclick = () => { RODANDO = false; pastas(); };
+    m.querySelector('#sArq').onclick = async () => { const fs = await escolherArquivos(); if (fs.length) { RODANDO = false; sincronizar(fs); } };
     try {
       if (!window.Acesso || !Acesso.unlocked) throw new Error('entre com seu usuário antes de sincronizar.');
       const achados = {};
-      if (SUPORTA) {
+      const porArquivos = fs => fs.forEach(f => { const t = TIPOS.find(t => t.rx.test(f.name)); if (t) { (achados.cands = achados.cands || {}); (achados.cands[t.tipo] = achados.cands[t.tipo] || []).push({ f, pasta: 'arquivo escolhido' }); } else log(`<b>${esc(f.name)}</b>: não reconheci essa planilha pelo nome.`, 'bad'); });
+      if (manuais) { log(`Planilhas escolhidas: ${manuais.length}.`); porArquivos(manuais); }
+      else if (SUPORTA) {
+        log('Procurando as pastas vinculadas…');
         let l = await lerPastas();
-        if (!l.length) { log('Nenhuma pasta vinculada: escolha a primeira pasta…'); l = await adicionarPasta(); }
+        if (SEM_BANCO) log('Este navegador não deixou o painel guardar as pastas (dados do site bloqueados ou perfil restrito). Escolha a pasta agora ou use <b>Escolher planilhas</b>.', 'bad');
+        if (!l.length) {
+          log('Nenhuma pasta vinculada: escolha a pasta das planilhas…');
+          try { l = await adicionarPasta(); }
+          catch (e) {
+            if (e && e.name === 'AbortError') throw e;
+            throw new Error('o navegador não abriu a janela de pastas (' + (e.message || e) + '). Clique em <b>Pastas → Adicionar pasta</b> ou em <b>Escolher planilhas</b>.');
+          }
+        }
         for (const h of l) {
           if (!(await temPerm(h)) && !(await pedirPerm(h))) { log(`Pasta <b>${esc(h.name)}</b>: sem permissão de leitura (use Pastas → Liberar).`, 'bad'); continue; }
           try { await varrer(h, 0, achados, h.name); log(`Pasta <b>${esc(h.name)}</b> lida.`); } catch (e) { log(`Pasta <b>${esc(h.name)}</b>: não consegui ler (${esc(e.message || e)}).`, 'bad'); }
         }
       } else {
-        log('Este navegador não abre pastas: escolha as planilhas que você tem (pode marcar várias).');
-        const fs = await new Promise(ok => { const i = document.createElement('input'); i.type = 'file'; i.multiple = true; i.accept = '.xlsm,.xlsx,.xls'; i.onchange = () => ok([...i.files]); i.click(); });
-        fs.forEach(f => { const t = TIPOS.find(t => t.rx.test(f.name)); if (t) { (achados.cands = achados.cands || {}); (achados.cands[t.tipo] = achados.cands[t.tipo] || []).push({ f, pasta: 'arquivo escolhido' }); } else log(`<b>${esc(f.name)}</b>: não reconheci essa planilha pelo nome.`, 'bad'); });
+        log('Este navegador não abre pastas: clique em <b>Escolher planilhas</b> e marque as que você tem (pode marcar várias).');
+        porArquivos(await escolherArquivos());
       }
       await escolher(achados);
       const vistas = TIPOS.filter(t => achados[t.tipo] && !(t.tipo === 'usuarios' && window.Layout && !Layout.admin()));
       vistas.forEach(t => { const a = achados[t.tipo]; log(`${t.nome}: <b>${esc(a.f.name)}</b> (${esc(a.pasta)}) · salva em ${new Date(a.f.lastModified).toLocaleString('pt-BR')}`); });
       const fora = TIPOS.filter(t => !achados[t.tipo] && !(t.tipo === 'usuarios' && window.Layout && !Layout.admin()));
       if (fora.length && vistas.length) log(`Não estão nas suas pastas: ${fora.map(t => t.nome).join(', ')}. Essas partes do painel continuam como estão.`);
-      if (!vistas.length) throw new Error('nenhuma planilha encontrada nas suas pastas. Confira no botão Pastas.');
+      if (!vistas.length) throw new Error('nenhuma planilha encontrada. Confira no botão <b>Pastas</b> ou use <b>Escolher planilhas</b>.');
 
       const c = await cfg.get(), S0 = sigs.get(), S1 = { ...S0 }, arquivos = [];
       // cada planilha é independente: se uma falhar (sem acesso, aberta/bloqueada, formato diferente),
@@ -409,7 +437,7 @@ window.Sincronizar = (function () {
       if ((fert || pz || av || pp || hb || oa) && window.Layout && Layout.animar) Layout.animar(document);
     } catch (e) {
       if (e && e.name === 'AbortError') log('Sincronização cancelada.');
-      else log('Não foi possível sincronizar: ' + esc(e.message || e), 'bad');
+      else { console.error('[Sincronizar]', e); log('Não foi possível sincronizar: ' + esc((e && e.message) || e).replace(/&lt;(\/?)b&gt;/g, '<$1b>'), 'bad'); }
     } finally { RODANDO = false; if (btn) btn.classList.remove('girando'); }
   }
 
