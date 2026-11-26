@@ -634,7 +634,7 @@ window.Fertirrigacao = (function () {
     Fertirrigacao.iniciar(window.__FERT_DADOS__);
     if (window.Pulverizacao) Pulverizacao.iniciar(window.__PULV_DADOS__, window.__HERB_DADOS__);
     if (window.Aviacao) Aviacao.iniciar(window.__AVI_DADOS__);
-    if (window.AviOS) AviOS.iniciar(window.__OSA_DADOS__);
+    if (window.AviOS) AviOS.iniciar(window.__OSA_DADOS__, window.__PISTA_DADOS__);
     if (window.Preparo) Preparo.iniciar(window.__PREP_DADOS__);
   });
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', go); else go();

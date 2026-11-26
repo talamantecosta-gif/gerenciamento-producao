@@ -3,11 +3,14 @@
    Carteira aberta, prazos × capacidade de voo (ritmo do TRAVICAR), carteira por operação,
    idade da cana na aplicação, estágio de corte e sequência das OS.
    O TRAVICAR (Aviacao.dados) entra para: ritmo de voo e OS já voadas (número da OS na identificação).
-   window.AviOS = { iniciar(dados), definir(dados), aoEntrar(), VERSAO, ARQ }
+   Sequência por pista (pistaaerea.json, planilha "Sequência Aplicação Aérea"): cada OS ligada à sua
+   pista de voo; cartões por pista com área, % voada (TRAVICAR) e prazos (FO.SA.21).
+   Tabela: ordena por qualquer coluna (clique no título); padrão = OS mais recentes primeiro.
+   window.AviOS = { iniciar(dados, pistas), definir(dados), definirPistas(pistas), aoEntrar(), VERSAO, ARQ, ARQ_P }
    ========================================================================= */
 window.AviOS = (function () {
   'use strict';
-  const VERSAO = 1, ARQ = 'osaerea.json';
+  const VERSAO = 2, ARQ = 'osaerea.json', ARQ_P = 'pistaaerea.json';
   const COR = { '1188': '#1F4D2B', '1141': '#2a6fb0', '1210': '#5E9A57', '1220': '#B07A00' };
   const CURTO = { '1188': '1ª Aplic. Aérea Foliar', '1141': 'Aérea Amin/outros', '1210': '2ª Aplic. Aérea Foliar', '1220': 'Aérea Inseticida' };
   const FAIXAS = ['até 3', '3–5', '5–7', '7–9', '9–12', '12+'];
@@ -15,7 +18,7 @@ window.AviOS = (function () {
   const ESTN = { ADEF: 'A def.', '18MC': 'P18', '12MC': 'P12', '12IN': 'P12i', '12IF': 'P12f', '18MF': 'P18f' };
   const ESTL = { ADEF: 'A definir', '18MC': 'Cana planta 18 meses', '12MC': 'Cana planta 12 meses', '12IN': 'Cana planta 12 meses (inverno)', '12IF': 'Cana planta 12 meses (12IF)', '18MF': 'Cana planta 18 meses (18MF)' };
   const PRAZO_ALERTA = 7; // dias: "vence em breve"
-  let D = null, U = null, S = { ver: 'abertas', op: null, ab: null, mais: false }, montado = false, ligado = false;
+  let D = null, P = null, U = null, S = { ver: 'abertas', op: null, pista: null, ab: null, mais: false, ord: { k: 'em', dir: -1 }, busca: '' }, montado = false, ligado = false;
   const $ = s => document.querySelector(s);
   const cor = op => COR[op] || '#9AA59D', curto = o => CURTO[o.op] || o.opNome;
   const dd = (a, b) => Math.round((new Date(b + 'T12:00:00Z') - new Date(a + 'T12:00:00Z')) / 864e5);
@@ -38,12 +41,42 @@ window.AviOS = (function () {
     // talhão (sem o 500, carreador) em mais de uma OS aberta da mesma operação
     const vis = {}; D.os.forEach(o => o.tal.split('-').filter(t => t && t !== '500').forEach(t => (vis[`${o.op}|${o.faz}|${t}`] = vis[`${o.op}|${o.faz}|${t}`] || new Set()).add(o.os)));
     const rep = {}; Object.values(vis).filter(s => s.size > 1).forEach(s => s.forEach(x => (rep[x] = rep[x] || new Set(), s.forEach(y => y !== x && rep[x].add(y)))));
+    // pista de cada OS (planilha de sequência aérea)
+    const pistaDe = {}, itemDe = {}; ((P && P.pistas) || []).forEach(p => p.itens.forEach(it => it.os.forEach(x => { pistaDe[x] = p.nome; itemDe[x] = it; })));
+    const voo = (os, ha) => { const v = T.voado[os] || 0; return { voado: v, pv: ha ? v / ha : 0 }; };
     const L = D.os.map(o => {
-      const prazo = o.fim ? dd(h, o.fim) : null, voado = T.voado[o.os] || 0, pv = o.ha ? voado / o.ha : 0;
-      const st = prazo == null ? 'nd' : prazo < 0 ? 'bad' : prazo <= PRAZO_ALERTA ? 'warn' : 'ok';
-      return { ...o, prazo, st, voado, pv, prot: prot.has(o.os), rep: rep[o.os] ? [...rep[o.os]] : [] };
+      const prazo = o.fim ? dd(h, o.fim) : null, st = prazo == null ? 'nd' : prazo < 0 ? 'bad' : prazo <= PRAZO_ALERTA ? 'warn' : 'ok';
+      return { ...o, prazo, st, ...voo(o.os, o.ha), prot: prot.has(o.os), rep: rep[o.os] ? [...rep[o.os]] : [], pista: pistaDe[o.os] || null };
     });
+    // OS da planilha de pistas que não estão na FO.SA.21 (emitidas depois, já fechadas ou número digitado errado)
+    const tem = new Set(D.os.map(o => o.os));
+    ((P && P.pistas) || []).forEach(p => p.itens.forEach(it => it.os.forEach(x => {
+      if (tem.has(x)) return; tem.add(x);
+      const ha = Math.round(it.ha / it.os.length * 100) / 100;
+      L.push({ os: x, op: it.op || '—', opNome: it.opNome || 'Operação não informada', em: it.em, ini: null, fim: null, faz: it.faz || '—', fazNome: it.fazNome, tal: '', ha, est: {}, vari: {}, idade: [], prazo: null, st: 'nd', ...voo(x, ha), prot: prot.has(x), rep: [], pista: p.nome, fora: true });
+    })));
     return { L, T, h };
+  }
+
+  /* ---------- OS por pista ---------- */
+  function pPistas(X) {
+    const { nf, pc, esc, sum } = U, el = $('#aoPistas'), box = $('#aoPistasBox');
+    if (!P || !P.pistas) { box.hidden = true; return; } box.hidden = false;
+    const { L } = X, nomes = [...P.pistas.map(p => p.nome), null];
+    const cards = nomes.map((nm, i) => {
+      const A = L.filter(o => o.pista === nm); if (!A.length) return '';
+      // área da pista = a da planilha de sequência (é o total que a equipe confere); sem pista = área da FO.SA.21
+      const pi = nm == null ? null : P.pistas.find(p => p.nome === nm);
+      const ha = pi ? sum(pi.itens.map(it => it.ha)) : sum(A.map(o => o.ha)), vo = Math.min(ha, sum(A.map(o => Math.min(o.voado, o.ha)))), venc = A.filter(o => o.st === 'bad').length, fora = A.filter(o => o.fora).length;
+      const faz = pi ? new Set(pi.itens.map(it => it.faz || it.fazNome)).size : new Set(A.map(o => o.faz)).size, nOS = pi ? new Set(pi.itens.flatMap(it => it.os)).size : A.length;
+      const ic = nm == null ? 'fa-circle-question' : /drone/i.test(nm) ? 'fa-helicopter' : 'fa-plane-departure', on = S.pista === (nm ?? '__sem');
+      return `<button type="button" class="ao-pi${on ? ' is-on' : ''}${nm == null ? ' is-sem' : ''}" data-pista="${esc(nm ?? '__sem')}" style="--i:${i}"><header><i class="fa-solid ${ic}"></i><b>${nm == null ? 'Sem pista' : esc(nm)}</b><span>${nOS} OS · ${faz} faz.</span></header>
+        <div class="ao-pi__v"><b>${nf(ha, 0)}</b><small>ha</small><em>${pc(ha ? vo / ha : 0)} voado</em></div>
+        <div class="ao-pi__bar"><i style="--w:${ha ? Math.min(100, vo / ha * 100) : 0}%"></i></div>
+        <footer><span>${nf(vo, 0)} ha voados</span>${venc ? `<span class="bad">${venc} vencida${venc > 1 ? 's' : ''}</span>` : ''}${nm == null ? '<span>na FO.SA.21, fora das pistas</span>' : fora ? `<span title="OS da pista que não estão na FO.SA.21: emitidas depois, já fechadas ou número a conferir">${fora} fora da FO.SA.21</span>` : ''}</footer></button>`;
+    }).join('');
+    el.innerHTML = cards;
+    U.cascata(el);
   }
 
   /* ---------- cards ---------- */
@@ -121,22 +154,32 @@ window.AviOS = (function () {
   }
 
   /* ---------- sequência de OS ---------- */
+  const COLS = [
+    { k: 'os', t: 'OS', v: o => +o.os || 0 }, { k: 'pista', t: 'Pista', v: o => o.pista || '~' }, { k: 'op', t: 'Operação', v: o => o.op }, { k: 'faz', t: 'Fazenda', v: o => o.fazNome || '' },
+    { k: 'tal', t: 'Talhões', v: o => o.tal || '' }, { k: 'ha', t: 'Área', n: 1, v: o => o.ha }, { k: 'pv', t: 'Voado', v: o => o.pv }, { k: 'em', t: 'Emitida', n: 1, v: o => o.em || '' },
+    { k: 'ini', t: 'Início prev.', n: 1, v: o => o.ini || '' }, { k: 'fim', t: 'Prazo', n: 1, v: o => o.fim || '9999' }, { k: 'sit', t: 'Situação', v: o => (o.st === 'bad' ? 0 : o.st === 'warn' ? 1 : o.fora ? 3 : 2) * 1e4 + (o.prazo ?? 9999) }, { k: 'est', t: 'Estágio · variedade', v: o => topo(o.est) || '~' },
+  ];
   function pTab(X) {
-    const { nf, pc, esc, dBR } = U, { L } = X;
-    const vis = (S.ver === 'conferir' ? L.filter(o => o.pv >= .9 || o.rep.length) : S.ver === 'vencidas' ? L.filter(o => o.st === 'bad') : L).filter(o => !S.op || o.op === S.op);
-    const R = vis.slice().sort((a, b) => String(a.fim).localeCompare(String(b.fim)) || b.ha - a.ha);
-    $('#aoTabN').textContent = `${R.length} OS${S.op ? ' · operação ' + S.op : ''} · ordenadas pelo prazo`;
-    const sit = o => [o.pv >= .9 ? '<span class="os-al ok">Voada · fechar OS</span>' : '', o.rep.length ? `<span class="os-al" title="Talhões também na OS ${esc(o.rep.join(', '))}">Talhão em outra OS</span>` : '', o.st === 'bad' ? `<span class="os-al bad">Vencida há ${-o.prazo} d</span>` : o.st === 'warn' ? `<span class="os-al">Vence em ${o.prazo} d</span>` : ''].join('');
+    const { nf, pc, esc, dBR } = U, { L } = X, q = semAcB(S.busca);
+    const vis = (S.ver === 'conferir' ? L.filter(o => o.pv >= .9 || o.rep.length || o.fora) : S.ver === 'vencidas' ? L.filter(o => o.st === 'bad') : L)
+      .filter(o => !S.op || o.op === S.op).filter(o => !S.pista || (S.pista === '__sem' ? !o.pista : o.pista === S.pista))
+      .filter(o => !q || semAcB(`${o.os} ${o.fazNome} ${o.faz} ${o.tal} ${o.pista || ''} ${o.op} ${o.opNome || ''}`).includes(q));
+    const col = COLS.find(c => c.k === S.ord.k) || COLS[7], dir = S.ord.dir;
+    const R = vis.slice().sort((a, b) => { const x = col.v(a), y = col.v(b); return (x < y ? -1 : x > y ? 1 : 0) * dir || String(b.em).localeCompare(String(a.em)) || (+b.os - +a.os); });
+    $('#aoTabN').textContent = `${R.length} OS${S.pista ? ' · pista ' + (S.pista === '__sem' ? 'sem pista' : S.pista) : ''}${S.op ? ' · operação ' + S.op : ''}`;
+    const sit = o => [o.fora ? '<span class="os-al" title="Está na planilha de pistas, mas não na FO.SA.21: emitida depois, já fechada ou número a conferir">Fora da FO.SA.21</span>' : '', o.pv >= .9 ? '<span class="os-al ok">Voada · fechar OS</span>' : '', o.rep.length ? `<span class="os-al" title="Talhões também na OS ${esc(o.rep.join(', '))}">Talhão em outra OS</span>` : '', o.st === 'bad' ? `<span class="os-al bad">Vencida há ${-o.prazo} d</span>` : o.st === 'warn' ? `<span class="os-al">Vence em ${o.prazo} d</span>` : ''].join('');
     const lim = S.mais ? 9999 : 40;
-    $('#aoTab').innerHTML = `<table><thead><tr><th>OS</th><th>Operação</th><th>Fazenda</th><th>Talhões</th><th class="n">Área</th><th>Voado</th><th class="n">Emitida</th><th class="n">Início prev.</th><th class="n">Prazo</th><th>Situação</th><th>Estágio · variedade</th></tr></thead><tbody>${R.slice(0, lim).map((o, i) => `<tr class="os-tr${S.ab === o.os ? ' is-on' : ''}" data-os="${esc(o.os)}" style="--i:${Math.min(i, 24)};--c:${cor(o.op)}"><td><b>${esc(o.os)}</b>${o.prot ? '<small class="os-cod">últ. protocolo</small>' : ''}</td><td><span class="hb-chip">${esc(o.op)}</span> <span class="os-opn">${esc(curto(o))}</span></td><td>${esc(o.fazNome)}<small class="os-cod">${esc(o.faz)}</small></td><td class="os-tal" title="${esc(o.tal)}">${esc(o.tal)}</td><td class="n">${nf(o.ha, 1)}</td><td>${o.voado ? `<div class="pz-prog"><div class="trk"><i style="--w:${Math.min(100, o.pv * 100)}%;background:var(--c)"></i></div><span>${pc(o.pv)}</span></div>` : '<span class="ao-mut">—</span>'}</td><td class="n">${dBR(o.em)}</td><td class="n">${dBR(o.ini)}</td><td class="n"><span class="os-age ${o.st === 'nd' ? '' : o.st}">${o.fim ? dBR(o.fim) : '—'}</span></td><td>${sit(o)}</td><td class="ao-mut">${esc(ESTL[topo(o.est)] ? ESTN[topo(o.est)] : topo(o.est) || '—')} · ${esc(topo(o.vari) || '—')}</td></tr>${S.ab === o.os ? `<tr class="os-det"><td colspan="11"><div class="os-det__g"><div><small>Talhões</small><p>${esc(o.tal)}</p></div><div><small>Estágio de corte</small><p>${Object.entries(o.est || {}).sort((a, b) => b[1] - a[1]).map(([k, v]) => `${esc(ESTL[k] || k)} · ${nf(v, 1)} ha`).join('<br>') || '—'}</p></div><div><small>Variedade · voado no TRAVICAR</small><p>${Object.entries(o.vari || {}).sort((a, b) => b[1] - a[1]).map(([k, v]) => `${esc(k)} · ${nf(v, 1)} ha`).join('<br>') || '—'}</p><p style="margin-top:6px">${o.voado ? `<b>${nf(o.voado, 1)} ha</b> voados (${pc(o.pv)})` : 'sem voo com esta OS no TRAVICAR'}${o.rep.length ? `<br>Talhões também na OS ${esc(o.rep.join(', '))}` : ''}</p></div></div></td></tr>` : ''}`).join('')}</tbody></table>${R.length > lim ? `<button type="button" class="hb-mais" data-mais="1">Ver todas (+${R.length - lim})</button>` : ''}`;
+    const th = c => `<th${c.n ? ' class="n"' : ''}><button type="button" class="ao-ord${S.ord.k === c.k ? ' is-on' : ''}" data-ord="${c.k}" aria-label="Ordenar por ${esc(c.t)}">${esc(c.t)}<i class="fa-solid ${S.ord.k === c.k ? (dir > 0 ? 'fa-arrow-up-short-wide' : 'fa-arrow-down-wide-short') : 'fa-sort'}"></i></button></th>`;
+    $('#aoTab').innerHTML = `<table><thead><tr>${COLS.map(th).join('')}</tr></thead><tbody>${R.slice(0, lim).map((o, i) => `<tr class="os-tr${S.ab === o.os ? ' is-on' : ''}" data-os="${esc(o.os)}" style="--i:${Math.min(i, 24)};--c:${cor(o.op)}"><td><b>${esc(o.os)}</b>${o.prot ? '<small class="os-cod">últ. protocolo</small>' : ''}</td><td>${o.pista ? `<span class="ao-pt">${esc(o.pista)}</span>` : '<span class="ao-mut">—</span>'}</td><td><span class="hb-chip">${esc(o.op)}</span> <span class="os-opn">${esc(curto(o))}</span></td><td>${esc(o.fazNome)}<small class="os-cod">${esc(o.faz)}</small></td><td class="os-tal" title="${esc(o.tal)}">${esc(o.tal || '—')}</td><td class="n">${nf(o.ha, 1)}</td><td>${o.voado ? `<div class="pz-prog"><div class="trk"><i style="--w:${Math.min(100, o.pv * 100)}%;background:var(--c)"></i></div><span>${pc(o.pv)}</span></div>` : '<span class="ao-mut">—</span>'}</td><td class="n">${dBR(o.em)}</td><td class="n">${o.ini ? dBR(o.ini) : '—'}</td><td class="n">${o.fim ? `<span class="os-age ${o.st === 'nd' ? '' : o.st}">${dBR(o.fim)}</span>` : '<span class="ao-mut">—</span>'}</td><td>${sit(o)}</td><td class="ao-mut">${o.fora ? '—' : `${esc(ESTL[topo(o.est)] ? ESTN[topo(o.est)] : topo(o.est) || '—')} · ${esc(topo(o.vari) || '—')}`}</td></tr>${S.ab === o.os ? `<tr class="os-det"><td colspan="${COLS.length}"><div class="os-det__g"><div><small>Talhões · pista</small><p>${esc(o.tal || '—')}</p><p style="margin-top:6px">${o.pista ? 'Pista <b>' + esc(o.pista) + '</b>' : 'Sem pista na planilha de sequência'}</p></div><div><small>Estágio de corte</small><p>${Object.entries(o.est || {}).sort((a, b) => b[1] - a[1]).map(([k, v]) => `${esc(ESTL[k] || k)} · ${nf(v, 1)} ha`).join('<br>') || '—'}</p></div><div><small>Variedade · voado no TRAVICAR</small><p>${Object.entries(o.vari || {}).sort((a, b) => b[1] - a[1]).map(([k, v]) => `${esc(k)} · ${nf(v, 1)} ha`).join('<br>') || '—'}</p><p style="margin-top:6px">${o.voado ? `<b>${nf(o.voado, 1)} ha</b> voados (${pc(o.pv)})` : 'sem voo com esta OS no TRAVICAR'}${o.rep.length ? `<br>Talhões também na OS ${esc(o.rep.join(', '))}` : ''}</p></div></div></td></tr>` : ''}`).join('')}</tbody></table>${R.length > lim ? `<button type="button" class="hb-mais" data-mais="1">Ver todas (+${R.length - lim})</button>` : ''}`;
     U.mover($('#aoVer'), $(`#aoVer button[data-v="${S.ver}"]`), true);
   }
+  const semAcB = s => String(s || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().trim();
 
   function tudo() {
     if (!D || !D.os) return;
     const X = lista();
     $('#aoData').textContent = `FO.SA.21 · posição de ${U.dBRa(X.h)}`;
-    pKpis(X); pPrazo(X); pOps(X); pIdade(X); pTab(X);
+    pKpis(X); pPrazo(X); pOps(X); pIdade(X); pPistas(X); pTab(X);
   }
   const visivel = () => { const pg = $('.page[data-p="avi"]'); return pg && pg.classList.contains('is-on'); };
   function montar() {
@@ -148,7 +191,10 @@ window.AviOS = (function () {
       ligado = true;
       $('#aoOps').onclick = e => { const b = e.target.closest('.ao-op'); if (b) { S.op = S.op === b.dataset.op ? null : b.dataset.op; tudo(); } };
       $('#aoVer').onclick = e => { const b = e.target.closest('button'); if (b) { S.ver = b.dataset.v; S.mais = false; tudo(); } };
-      $('#aoTab').onclick = e => { if (e.target.closest('[data-mais]')) { S.mais = true; pTab(lista()); return; } const r = e.target.closest('tr.os-tr'); if (r) { S.ab = S.ab === r.dataset.os ? null : r.dataset.os; pTab(lista()); } };
+      $('#aoPistas').onclick = e => { const b = e.target.closest('.ao-pi'); if (b) { S.pista = S.pista === b.dataset.pista ? null : b.dataset.pista; S.mais = false; pPistas(lista()); pTab(lista()); } };
+      let tb; $('#aoBusca').oninput = e => { clearTimeout(tb); tb = setTimeout(() => { S.busca = e.target.value; S.mais = false; pTab(lista()); }, 180); };
+      $('#aoTab').onclick = e => { if (e.target.closest('[data-mais]')) { S.mais = true; pTab(lista()); return; }
+        const o = e.target.closest('[data-ord]'); if (o) { const k = o.dataset.ord; S.ord = S.ord.k === k ? { k, dir: -S.ord.dir } : { k, dir: ['em', 'ini', 'ha', 'pv', 'os'].includes(k) ? -1 : 1 }; pTab(lista()); return; } const r = e.target.closest('tr.os-tr'); if (r) { S.ab = S.ab === r.dataset.os ? null : r.dataset.os; pTab(lista()); } };
       let tm; addEventListener('resize', () => { clearTimeout(tm); tm = setTimeout(() => { if (D && visivel()) pPrazo(lista()); }, 220); });
     }
     tudo(); montado = true;
@@ -157,13 +203,16 @@ window.AviOS = (function () {
     const ant = Layout.aoEntrar;
     Layout.aoEntrar = pg => { if (typeof ant === 'function') ant(pg); if (pg.dataset.p === 'avi') aoEntrar(); };
   }
-  async function iniciar(dados) {
+  const buscar = async a => { try { const r = await fetch(a, { cache: 'no-store' }); if (r.ok) return (await Acesso.readJson(await r.json())).data; } catch (e) { /* ainda sem arquivo */ } return null; };
+  async function iniciar(dados, pistas) {
     if (!window.Fertirrigacao || !Fertirrigacao.util) return;
-    if (dados) { D = dados; montar(); return; }
-    try { const r = await fetch(ARQ, { cache: 'no-store' }); if (r.ok) D = (await Acesso.readJson(await r.json())).data; } catch (e) { /* ainda sem arquivo */ }
+    if (pistas) P = pistas;
+    if (dados) { D = dados; montar(); if (!pistas) { P = await buscar(ARQ_P); if (P && montado) tudo(); } return; }
+    [D, P] = await Promise.all([buscar(ARQ), pistas ? Promise.resolve(pistas) : buscar(ARQ_P)]);
     montar();
   }
   function aoEntrar() { if (D && montado) tudo(); }
   function definir(dados) { D = dados; montar(); }
-  return { iniciar, definir, aoEntrar, VERSAO, ARQ, get dados() { return D; } };
+  function definirPistas(pistas) { P = pistas; if (D && montado) tudo(); }
+  return { iniciar, definir, definirPistas, aoEntrar, VERSAO, ARQ, ARQ_P, get dados() { return D; }, get pistas() { return P; } };
 })();
