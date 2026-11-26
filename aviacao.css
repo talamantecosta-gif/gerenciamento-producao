@@ -129,3 +129,6 @@ th.n .ao-ord { flex-direction: row-reverse; }
 .ao-busca:focus-within { border-color: var(--folha, #3C7A35); box-shadow: 0 0 0 3px rgba(60, 122, 53, .14); }
 @media (max-width: 760px) { .ao-pis { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; } .ao-pi { padding: 12px; } .ao-pi__v b { font-size: 21px; } .ao-busca { min-width: 0; width: 100%; } }
 @media (prefers-reduced-motion: reduce) { .ao-pi, .ao-pi__bar i { animation: none; } }
+.ao-pi__h { font-size: 11px; color: var(--muted); border-top: 1px dashed var(--line); padding-top: 7px; }
+.ao-pi__h i { margin-right: 5px; } .ao-pi__h b { color: var(--ink); }
+.os-al.hist { background: #EEF1F6; color: #3F5470; }
